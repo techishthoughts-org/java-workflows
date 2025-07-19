@@ -83,7 +83,7 @@ name: CI
 on: [push, pull_request]
 jobs:
   test:
-    uses: your-org/workflows/.github/workflows/java-ci-secure.yml@v1.0.0
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-secure.yml@v1.0.0
     with:
       java-version: '21'
       os-matrix: 'ubuntu-latest,windows-latest'
@@ -101,7 +101,7 @@ on:
     branches: [main]
 jobs:
   release:
-    uses: your-org/workflows/.github/workflows/auto-tag-enhanced.yml@v1.0.0
+    uses: techishthoughts-org/workflows/.github/workflows/auto-tag-enhanced.yml@v1.0.0
     with:
       java-version: '17'
       build-docker: true
@@ -121,7 +121,7 @@ on:
     types: [closed]
 jobs:
   cleanup:
-    uses: your-org/workflows/.github/workflows/auto-delete-branch-enhanced.yml@v1.0.0
+    uses: techishthoughts-org/workflows/.github/workflows/auto-delete-branch-enhanced.yml@v1.0.0
     with:
       protected-branches: 'main,develop,staging'
       notify-on-deletion: true
@@ -139,7 +139,7 @@ on:
     types: [opened, synchronize]
 jobs:
   auto-merge:
-    uses: your-org/workflows/.github/workflows/dependabot-auto-merge-enhanced.yml@v1.0.0
+    uses: techishthoughts-org/workflows/.github/workflows/dependabot-auto-merge-enhanced.yml@v1.0.0
     with:
       auto-merge-patch: true
       auto-merge-minor: true
@@ -157,7 +157,7 @@ jobs:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: your-org/workflows/.github/actions/setup-java-maven@v1.0.0
+  - uses: techishthoughts-org/workflows/.github/actions/setup-java-maven@v1.0.0
     with:
       java-version: '21'
       maven-opts: '-Xmx4g'
@@ -167,7 +167,7 @@ steps:
 
 ```yaml
 steps:
-  - uses: your-org/workflows/.github/actions/docker-build-push@v1.0.0
+  - uses: techishthoughts-org/workflows/.github/actions/docker-build-push@v1.0.0
     with:
       image-name: 'my-app'
       image-tag: 'v1.0.0'

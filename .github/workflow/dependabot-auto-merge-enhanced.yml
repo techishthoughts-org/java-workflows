@@ -1,0 +1,489 @@
+# .github/workflows/dependabot-auto-merge-enhanced.yml
+# Purpose: Enhanced Dependabot auto-merge with comprehensive logic and outputs.
+# Inputs:
+#   auto-merge-patch: Enable auto-merge for patch updates (default: true)
+#   auto-merge-minor: Enable auto-merge for minor updates (default: true)
+#   auto-merge-major: Enable auto-merge for major updates (default: false)
+#   merge-method: Merge method (default: 'squash')
+#   add-comments: Add comments to PR (default: true)
+#   require-ci-success: Require CI to pass before merge (default: true)
+#   auto-approve: Auto-approve PRs before merge (default: true)
+#   exclude-dependencies: Comma-separated list of dependencies to exclude (default: '')
+#   include-dev-dependencies: Include development dependencies (default: true)
+#   notify-on-merge: Send notifications when PRs are merged (default: false)
+# Outputs:
+#   pr-processed: Whether the PR was processed
+#   merge-enabled: Whether auto-merge was enabled
+#   dependency-name: Name of the updated dependency
+#   update-type: Type of update (patch/minor/major)
+#   version-change: Version change string
+#   merge-reason: Reason for merge decision
+# Secrets:
+#   SLACK_WEBHOOK_URL: Optional Slack webhook for notifications
+#   GITHUB_TOKEN: Required for PR operations
+# Usage:
+#   jobs:
+#     auto-merge:
+#       uses: org/workflows/.github/workflows/dependabot-auto-merge-enhanced.yml@v1.0.0
+#       with:
+#         auto-merge-patch: true
+#         auto-merge-minor: true
+#         auto-merge-major: false
+#         merge-method: 'squash'
+#         add-comments: true
+#         require-ci-success: true
+#         auto-approve: true
+#         exclude-dependencies: 'spring-boot,junit'
+#         notify-on-merge: true
+#       secrets:
+#         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# Versioning: Reference by tag for stability.
+
+name: 🤖 Enhanced Dependabot Auto-Merge
+
+on:
+  workflow_call:
+    inputs:
+      auto-merge-patch:
+        required: false
+        type: boolean
+        default: true
+      auto-merge-minor:
+        required: false
+        type: boolean
+        default: true
+      auto-merge-major:
+        required: false
+        type: boolean
+        default: false
+      merge-method:
+        required: false
+        type: string
+        default: 'squash'
+      add-comments:
+        required: false
+        type: boolean
+        default: true
+      require-ci-success:
+        required: false
+        type: boolean
+        default: true
+      auto-approve:
+        required: false
+        type: boolean
+        default: true
+      exclude-dependencies:
+        required: false
+        type: string
+        default: ''
+      include-dev-dependencies:
+        required: false
+        type: boolean
+        default: true
+      notify-on-merge:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      pr-processed:
+        description: "Whether the PR was processed"
+        value: ${{ jobs.auto-merge.outputs.pr-processed }}
+      merge-enabled:
+        description: "Whether auto-merge was enabled"
+        value: ${{ jobs.auto-merge.outputs.merge-enabled }}
+      dependency-name:
+        description: "Name of the updated dependency"
+        value: ${{ jobs.auto-merge.outputs.dependency-name }}
+      update-type:
+        description: "Type of update (patch/minor/major)"
+        value: ${{ jobs.auto-merge.outputs.update-type }}
+      version-change:
+        description: "Version change string"
+        value: ${{ jobs.auto-merge.outputs.version-change }}
+      merge-reason:
+        description: "Reason for merge decision"
+        value: ${{ jobs.auto-merge.outputs.merge-reason }}
+    secrets:
+      SLACK_WEBHOOK_URL:
+        description: "Slack webhook URL for notifications"
+        required: false
+      GITHUB_TOKEN:
+        description: "GitHub token for PR operations"
+        required: true
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Merge Inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      merge-method-validated: ${{ steps.validate.outputs.merge-method }}
+      exclude-list: ${{ steps.validate.outputs.exclude-list }}
+    steps:
+      - name: 🔍 Validate inputs
+        id: validate
+        run: |
+          MERGE_METHOD="${{ inputs.merge-method }}"
+          EXCLUDE_DEPS="${{ inputs.exclude-dependencies }}"
+
+          # Validate merge method
+          if [[ ! "$MERGE_METHOD" =~ ^(merge|squash|rebase)$ ]]; then
+            echo "❌ Invalid merge method: $MERGE_METHOD (must be: merge, squash, or rebase)"
+            exit 1
+          fi
+
+          # Process exclude list
+          if [ -n "$EXCLUDE_DEPS" ]; then
+            # Convert to lowercase and remove spaces
+            EXCLUDE_LIST=$(echo "$EXCLUDE_DEPS" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+            echo "exclude-list=$EXCLUDE_LIST" >> $GITHUB_OUTPUT
+          else
+            echo "exclude-list=" >> $GITHUB_OUTPUT
+          fi
+
+          echo "merge-method=$MERGE_METHOD" >> $GITHUB_OUTPUT
+
+          echo "✅ Input validation completed"
+          echo "  🔀 Merge method: $MERGE_METHOD"
+          echo "  🚫 Excluded dependencies: ${EXCLUDE_DEPS:-'None'}"
+          echo "  ✅ Auto-approve: ${{ inputs.auto-approve }}"
+          echo "  🧪 Require CI: ${{ inputs.require-ci-success }}"
+
+  auto-merge:
+    name: 🤖 Process Dependabot PR
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+    outputs:
+      pr-processed: ${{ steps.process-pr.outputs.processed }}
+      merge-enabled: ${{ steps.enable-merge.outputs.enabled }}
+      dependency-name: ${{ steps.dependabot-metadata.outputs.dependency-names }}
+      update-type: ${{ steps.dependabot-metadata.outputs.update-type }}
+      version-change: ${{ steps.process-pr.outputs.version-change }}
+      merge-reason: ${{ steps.process-pr.outputs.reason }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: 🔍 Get Dependabot metadata
+        id: dependabot-metadata
+        uses: dependabot/fetch-metadata@c9c4182bf1b97f5224aee3906fd373f6b61b4526 # v2.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: 📋 Extract PR information
+        id: pr-info
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+          echo "📋 PR Information:"
+          echo "  🔢 Number: #$PR_NUMBER"
+          echo "  📝 Title: $PR_TITLE"
+          echo "  🌿 Branch: $BRANCH_NAME"
+
+      - name: 🔍 Process dependency update
+        id: process-pr
+        run: |
+          DEPENDENCY_NAMES="${{ steps.dependabot-metadata.outputs.dependency-names }}"
+          UPDATE_TYPE="${{ steps.dependabot-metadata.outputs.update-type }}"
+          PREVIOUS_VERSION="${{ steps.dependabot-metadata.outputs.previous-version }}"
+          NEW_VERSION="${{ steps.dependabot-metadata.outputs.new-version }}"
+          DEPENDENCY_TYPE="${{ steps.dependabot-metadata.outputs.dependency-type }}"
+          EXCLUDE_LIST="${{ needs.validate-inputs.outputs.exclude-list }}"
+
+          echo "🔍 Dependency Analysis:"
+          echo "  📦 Dependencies: $DEPENDENCY_NAMES"
+          echo "  🔄 Update type: $UPDATE_TYPE"
+          echo "  📊 Version: $PREVIOUS_VERSION → $NEW_VERSION"
+          echo "  🏷️ Type: $DEPENDENCY_TYPE"
+
+          # Create version change string
+          VERSION_CHANGE="$PREVIOUS_VERSION → $NEW_VERSION"
+          echo "version-change=$VERSION_CHANGE" >> $GITHUB_OUTPUT
+
+          # Check if dependency is excluded
+          SHOULD_PROCESS=true
+          REASON=""
+
+          if [ -n "$EXCLUDE_LIST" ]; then
+            IFS=',' read -ra EXCLUDED <<< "$EXCLUDE_LIST"
+            for excluded in "${EXCLUDED[@]}"; do
+              if [[ "$DEPENDENCY_NAMES" == *"$excluded"* ]]; then
+                SHOULD_PROCESS=false
+                REASON="Dependency '$DEPENDENCY_NAMES' is in the exclude list"
+                break
+              fi
+            done
+          fi
+
+          # Check if dev dependencies should be included
+          if [[ "$SHOULD_PROCESS" == "true" && "$DEPENDENCY_TYPE" == "direct:development" && "${{ inputs.include-dev-dependencies }}" == "false" ]]; then
+            SHOULD_PROCESS=false
+            REASON="Development dependencies are excluded by configuration"
+          fi
+
+          # Determine if we should auto-merge based on update type
+          if [[ "$SHOULD_PROCESS" == "true" ]]; then
+            case "$UPDATE_TYPE" in
+              "version-update:semver-patch")
+                if [[ "${{ inputs.auto-merge-patch }}" == "true" ]]; then
+                  REASON="Auto-merge enabled for patch updates"
+                else
+                  SHOULD_PROCESS=false
+                  REASON="Auto-merge disabled for patch updates"
+                fi
+                ;;
+              "version-update:semver-minor")
+                if [[ "${{ inputs.auto-merge-minor }}" == "true" ]]; then
+                  REASON="Auto-merge enabled for minor updates"
+                else
+                  SHOULD_PROCESS=false
+                  REASON="Auto-merge disabled for minor updates"
+                fi
+                ;;
+              "version-update:semver-major")
+                if [[ "${{ inputs.auto-merge-major }}" == "true" ]]; then
+                  REASON="Auto-merge enabled for major updates"
+                else
+                  SHOULD_PROCESS=false
+                  REASON="Auto-merge disabled for major updates (requires manual review)"
+                fi
+                ;;
+              *)
+                SHOULD_PROCESS=false
+                REASON="Unknown update type: $UPDATE_TYPE"
+                ;;
+            esac
+          fi
+
+          echo "processed=$SHOULD_PROCESS" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+          echo "📊 Processing Decision:"
+          echo "  ✅ Should process: $SHOULD_PROCESS"
+          echo "  📝 Reason: $REASON"
+
+      - name: ✅ Auto-approve PR
+        if: |
+          steps.process-pr.outputs.processed == 'true' && 
+          inputs.auto-approve
+        run: |
+          echo "✅ Auto-approving Dependabot PR..."
+          gh pr review "${{ steps.pr-info.outputs.number }}" --approve --body "🤖 **Auto-approved**: This dependency update meets the criteria for automatic approval.
+
+          📦 **Dependency**: \`${{ steps.dependabot-metadata.outputs.dependency-names }}\`
+          🔄 **Update**: \`${{ steps.process-pr.outputs.version-change }}\`
+          🏷️ **Type**: \`${{ steps.dependabot-metadata.outputs.update-type }}\`
+
+          ✅ Automatically approved based on configured rules."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ⏳ Wait for CI checks
+        if: |
+          steps.process-pr.outputs.processed == 'true' && 
+          inputs.require-ci-success
+        uses: actions/github-script@60a0d83039c74a4adc46f37e7e0b0d4e4c3b5c8e # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = ${{ steps.pr-info.outputs.number }};
+            const maxWaitTime = 30 * 60 * 1000; // 30 minutes
+            const checkInterval = 30 * 1000; // 30 seconds
+            const startTime = Date.now();
+
+            console.log('⏳ Waiting for CI checks to complete...');
+
+            while (Date.now() - startTime < maxWaitTime) {
+              try {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber
+                });
+
+                const { data: checks } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: pr.head.sha
+                });
+
+                const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: pr.head.sha
+                });
+
+                const allChecks = [...checks.check_runs, ...statuses];
+                const pendingChecks = allChecks.filter(check => 
+                  check.status === 'in_progress' || 
+                  check.status === 'queued' || 
+                  check.state === 'pending'
+                );
+
+                const failedChecks = allChecks.filter(check => 
+                  check.conclusion === 'failure' || 
+                  check.state === 'failure'
+                );
+
+                if (failedChecks.length > 0) {
+                  console.log('❌ CI checks failed, cannot auto-merge');
+                  core.setFailed('CI checks failed');
+                  return;
+                }
+
+                if (pendingChecks.length === 0) {
+                  console.log('✅ All CI checks passed');
+                  return;
+                }
+
+                console.log(`⏳ ${pendingChecks.length} checks still pending, waiting...`);
+                await new Promise(resolve => setTimeout(resolve, checkInterval));
+
+              } catch (error) {
+                console.log('⚠️ Error checking CI status:', error.message);
+                await new Promise(resolve => setTimeout(resolve, checkInterval));
+              }
+            }
+
+            console.log('⏰ Timeout waiting for CI checks');
+            core.setFailed('Timeout waiting for CI checks to complete');
+
+      - name: 🔄 Enable auto-merge
+        id: enable-merge
+        if: steps.process-pr.outputs.processed == 'true'
+        run: |
+          MERGE_METHOD="${{ needs.validate-inputs.outputs.merge-method-validated }}"
+          PR_NUMBER="${{ steps.pr-info.outputs.number }}"
+
+          echo "🔄 Enabling auto-merge with method: $MERGE_METHOD"
+
+          case "$MERGE_METHOD" in
+            "merge")
+              gh pr merge --auto --merge "$PR_NUMBER"
+              ;;
+            "squash")
+              gh pr merge --auto --squash "$PR_NUMBER"
+              ;;
+            "rebase")
+              gh pr merge --auto --rebase "$PR_NUMBER"
+              ;;
+          esac
+
+          echo "enabled=true" >> $GITHUB_OUTPUT
+          echo "✅ Auto-merge enabled successfully"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 💬 Add informational comment
+        if: |
+          inputs.add-comments && 
+          steps.process-pr.outputs.processed == 'true'
+        run: |
+          DEPENDENCY_NAMES="${{ steps.dependabot-metadata.outputs.dependency-names }}"
+          UPDATE_TYPE="${{ steps.dependabot-metadata.outputs.update-type }}"
+          VERSION_CHANGE="${{ steps.process-pr.outputs.version-change }}"
+          MERGE_METHOD="${{ needs.validate-inputs.outputs.merge-method-validated }}"
+          REASON="${{ steps.process-pr.outputs.reason }}"
+
+          gh pr comment "${{ steps.pr-info.outputs.number }}" --body "🤖 **Auto-merge enabled** for this dependency update.
+
+          ## 📊 Update Details
+          - **Dependency**: \`$DEPENDENCY_NAMES\`
+          - **Update Type**: \`$UPDATE_TYPE\`
+          - **Version Change**: \`$VERSION_CHANGE\`
+          - **Merge Method**: \`$MERGE_METHOD\`
+
+          ## ⚙️ Configuration
+          - **Reason**: $REASON
+          - **CI Required**: ${{ inputs.require-ci-success }}
+          - **Auto-approved**: ${{ inputs.auto-approve }}
+
+          ℹ️ This PR will be automatically merged once all required checks pass."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🚨 Add manual review comment
+        if: |
+          inputs.add-comments && 
+          steps.process-pr.outputs.processed == 'false' &&
+          steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          DEPENDENCY_NAMES="${{ steps.dependabot-metadata.outputs.dependency-names }}"
+          VERSION_CHANGE="${{ steps.process-pr.outputs.version-change }}"
+          REASON="${{ steps.process-pr.outputs.reason }}"
+
+          gh pr comment "${{ steps.pr-info.outputs.number }}" --body "🚨 **Manual review required** for this dependency update.
+
+          ## 📊 Update Details
+          - **Dependency**: \`$DEPENDENCY_NAMES\`
+          - **Update Type**: \`version-update:semver-major\`
+          - **Version Change**: \`$VERSION_CHANGE\`
+
+          ## ⚠️ Action Required
+          **Reason**: $REASON
+
+          Please review the changelog and test thoroughly before merging. Major version updates may contain breaking changes.
+
+          ### 📋 Review Checklist
+          - [ ] Review dependency changelog/release notes
+          - [ ] Check for breaking changes
+          - [ ] Run tests locally if needed
+          - [ ] Verify application functionality"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Log processing summary
+        run: |
+          echo "📊 Dependabot Processing Summary:"
+          echo "=================================="
+          echo "📦 Dependency: ${{ steps.dependabot-metadata.outputs.dependency-names }}"
+          echo "🔄 Update type: ${{ steps.dependabot-metadata.outputs.update-type }}"
+          echo "📊 Version change: ${{ steps.process-pr.outputs.version-change }}"
+          echo "🏷️ Dependency type: ${{ steps.dependabot-metadata.outputs.dependency-type }}"
+          echo "✅ Processed: ${{ steps.process-pr.outputs.processed }}"
+          echo "🔄 Auto-merge enabled: ${{ steps.enable-merge.outputs.enabled }}"
+          echo "📝 Reason: ${{ steps.process-pr.outputs.reason }}"
+          echo "🔢 PR: #${{ steps.pr-info.outputs.number }}"
+
+  notify-merge:
+    name: 📢 Notify Auto-Merge
+    runs-on: ubuntu-latest
+    needs: [auto-merge]
+    if: |
+      always() && 
+      needs.auto-merge.outputs.merge-enabled == 'true' &&
+      inputs.notify-on-merge &&
+      secrets.SLACK_WEBHOOK_URL != ''
+    permissions:
+      contents: read
+    steps:
+      - name: 📢 Send merge notification
+        uses: 8398a7/action-slack@28ba43ae48961b90635b50953d216767a6bea486 # v3.16.2
+        with:
+          status: success
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            🤖 Dependabot Auto-Merge Enabled
+
+            📦 **Dependency**: ${{ needs.auto-merge.outputs.dependency-name }}
+            🔄 **Update Type**: ${{ needs.auto-merge.outputs.update-type }}
+            📊 **Version**: ${{ needs.auto-merge.outputs.version-change }}
+            📝 **Reason**: ${{ needs.auto-merge.outputs.merge-reason }}
+
+            🔗 **PR**: ${{ github.event.pull_request.html_url }}
+            Repository: ${{ github.repository }}

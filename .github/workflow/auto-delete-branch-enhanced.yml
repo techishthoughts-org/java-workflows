@@ -1,0 +1,364 @@
+# .github/workflows/auto-delete-branch-enhanced.yml
+# Purpose: Enhanced branch deletion with comprehensive outputs and error handling.
+# Inputs:
+#   protected-branches: Comma-separated list of branches never to delete (default: 'main,master,develop')
+#   add-comment: Whether to comment on the PR after deletion (default: true)
+#   notify-on-deletion: Send notifications when branches are deleted (default: false)
+#   dry-run: Only simulate deletion without actually deleting (default: false)
+#   delete-delay: Delay in seconds before deletion (default: 0)
+# Outputs:
+#   branch-deleted: Whether the branch was actually deleted
+#   branch-name: Name of the branch that was processed
+#   deletion-reason: Reason for deletion or protection
+#   pr-number: Pull request number
+#   comment-added: Whether a comment was added to the PR
+# Secrets:
+#   SLACK_WEBHOOK_URL: Optional Slack webhook for notifications
+#   GITHUB_TOKEN: Required for branch operations
+# Usage:
+#   jobs:
+#     delete-branch:
+#       uses: org/workflows/.github/workflows/auto-delete-branch-enhanced.yml@v1.0.0
+#       with:
+#         protected-branches: 'main,develop,staging'
+#         add-comment: true
+#         notify-on-deletion: true
+#         dry-run: false
+#         delete-delay: 30
+#       secrets:
+#         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# Versioning: Always reference a specific tag for stability.
+
+name: 🗑️ Enhanced Auto Delete Merged Branches
+
+on:
+  workflow_call:
+    inputs:
+      protected-branches:
+        required: false
+        type: string
+        default: 'main,master,develop'
+      add-comment:
+        required: false
+        type: boolean
+        default: true
+      notify-on-deletion:
+        required: false
+        type: boolean
+        default: false
+      dry-run:
+        required: false
+        type: boolean
+        default: false
+      delete-delay:
+        required: false
+        type: number
+        default: 0
+    outputs:
+      branch-deleted:
+        description: "Whether the branch was actually deleted"
+        value: ${{ jobs.delete-branch.outputs.branch-deleted }}
+      branch-name:
+        description: "Name of the branch that was processed"
+        value: ${{ jobs.delete-branch.outputs.branch-name }}
+      deletion-reason:
+        description: "Reason for deletion or protection"
+        value: ${{ jobs.delete-branch.outputs.deletion-reason }}
+      pr-number:
+        description: "Pull request number"
+        value: ${{ jobs.delete-branch.outputs.pr-number }}
+      comment-added:
+        description: "Whether a comment was added to the PR"
+        value: ${{ jobs.delete-branch.outputs.comment-added }}
+    secrets:
+      SLACK_WEBHOOK_URL:
+        description: "Slack webhook URL for notifications"
+        required: false
+      GITHUB_TOKEN:
+        description: "GitHub token for branch operations"
+        required: true
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Deletion Inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      protected-branches-validated: ${{ steps.validate.outputs.protected-branches }}
+      delete-delay-validated: ${{ steps.validate.outputs.delete-delay }}
+    steps:
+      - name: 🔍 Validate inputs
+        id: validate
+        run: |
+          PROTECTED_BRANCHES="${{ inputs.protected-branches }}"
+          DELETE_DELAY="${{ inputs.delete-delay }}"
+
+          # Validate protected branches format
+          if [[ ! "$PROTECTED_BRANCHES" =~ ^[a-zA-Z0-9._/-]+(,[a-zA-Z0-9._/-]+)*$ ]]; then
+            echo "❌ Invalid protected branches format: $PROTECTED_BRANCHES"
+            exit 1
+          fi
+
+          # Validate delete delay
+          if [[ ! "$DELETE_DELAY" =~ ^[0-9]+$ ]] || [ "$DELETE_DELAY" -lt 0 ] || [ "$DELETE_DELAY" -gt 3600 ]; then
+            echo "❌ Invalid delete delay: $DELETE_DELAY (must be 0-3600 seconds)"
+            exit 1
+          fi
+
+          echo "protected-branches=$PROTECTED_BRANCHES" >> $GITHUB_OUTPUT
+          echo "delete-delay=$DELETE_DELAY" >> $GITHUB_OUTPUT
+
+          echo "✅ Input validation completed"
+          echo "  🛡️ Protected branches: $PROTECTED_BRANCHES"
+          echo "  ⏱️ Delete delay: $DELETE_DELAY seconds"
+          echo "  🧪 Dry run: ${{ inputs.dry-run }}"
+
+  delete-branch:
+    name: 🧹 Process Branch Deletion
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      branch-deleted: ${{ steps.delete-branch.outputs.deleted }}
+      branch-name: ${{ steps.branch-info.outputs.name }}
+      deletion-reason: ${{ steps.should-delete.outputs.reason }}
+      pr-number: ${{ steps.branch-info.outputs.pr-number }}
+      comment-added: ${{ steps.add-comment.outputs.added }}
+    steps:
+      - name: 📋 Extract branch information
+        id: branch-info
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          MERGE_COMMIT="${{ github.event.pull_request.merge_commit_sha }}"
+
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "base-branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "merge-commit=$MERGE_COMMIT" >> $GITHUB_OUTPUT
+
+          echo "📋 Branch Information:"
+          echo "  🌿 Branch: $BRANCH_NAME"
+          echo "  🔢 PR: #$PR_NUMBER"
+          echo "  🎯 Base: $BASE_BRANCH"
+          echo "  👤 Author: $AUTHOR"
+          echo "  🔗 Merge commit: $MERGE_COMMIT"
+
+      - name: 🔍 Check if branch should be deleted
+        id: should-delete
+        run: |
+          BRANCH_NAME="${{ steps.branch-info.outputs.name }}"
+          PROTECTED_BRANCHES="${{ needs.validate-inputs.outputs.protected-branches-validated }}"
+
+          # Convert comma-separated list to array and check
+          IFS=',' read -ra PROTECTED <<< "$PROTECTED_BRANCHES"
+          SHOULD_DELETE=true
+          REASON=""
+
+          # Check if branch is protected
+          for branch in "${PROTECTED[@]}"; do
+            branch=$(echo "$branch" | xargs) # trim whitespace
+            if [[ "$BRANCH_NAME" == "$branch" ]]; then
+              SHOULD_DELETE=false
+              REASON="Branch '$BRANCH_NAME' is protected and cannot be deleted"
+              break
+            fi
+          done
+
+          # Check for special branch patterns
+          if [[ "$SHOULD_DELETE" == "true" ]]; then
+            if [[ "$BRANCH_NAME" =~ ^(release|hotfix)/ ]]; then
+              REASON="Branch '$BRANCH_NAME' is eligible for deletion (merged feature/bugfix branch)"
+            elif [[ "$BRANCH_NAME" =~ ^(feature|bugfix|fix)/ ]]; then
+              REASON="Branch '$BRANCH_NAME' is eligible for deletion (merged feature/bugfix branch)"
+            else
+              REASON="Branch '$BRANCH_NAME' is eligible for deletion (merged branch)"
+            fi
+          fi
+
+          echo "should-delete=$SHOULD_DELETE" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+          echo "🔍 Deletion Analysis:"
+          echo "  ✅ Should delete: $SHOULD_DELETE"
+          echo "  📝 Reason: $REASON"
+
+      - name: ⏱️ Wait before deletion
+        if: |
+          steps.should-delete.outputs.should-delete == 'true' && 
+          needs.validate-inputs.outputs.delete-delay-validated != '0'
+        run: |
+          DELAY="${{ needs.validate-inputs.outputs.delete-delay-validated }}"
+          echo "⏱️ Waiting $DELAY seconds before deletion..."
+          sleep "$DELAY"
+          echo "✅ Wait period completed"
+
+      - name: 🗑️ Delete merged branch
+        id: delete-branch
+        if: steps.should-delete.outputs.should-delete == 'true'
+        uses: actions/github-script@60a0d83039c74a4adc46f37e7e0b0d4e4c3b5c8e # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName = '${{ steps.branch-info.outputs.name }}';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const dryRun = ${{ inputs.dry-run }};
+
+            try {
+              console.log(`🗑️ ${dryRun ? 'DRY RUN: Would delete' : 'Deleting'} branch: ${branchName}`);
+
+              if (!dryRun) {
+                await github.rest.git.deleteRef({
+                  owner: owner,
+                  repo: repo,
+                  ref: `heads/${branchName}`
+                });
+                console.log(`✅ Successfully deleted branch: ${branchName}`);
+              } else {
+                console.log(`🧪 DRY RUN: Branch ${branchName} would be deleted`);
+              }
+
+              core.setOutput('deleted', !dryRun);
+              core.setOutput('error', '');
+
+              return {
+                success: true,
+                deleted: !dryRun,
+                message: `Branch ${branchName} ${dryRun ? 'would be' : 'was'} deleted successfully`
+              };
+
+            } catch (error) {
+              console.error(`❌ Failed to delete branch ${branchName}:`, error.message);
+
+              let errorMessage = 'Unknown error';
+              if (error.status === 422) {
+                errorMessage = 'Branch was already deleted or does not exist';
+                console.log(`ℹ️ Branch ${branchName} was already deleted or doesn't exist`);
+              } else if (error.status === 403) {
+                errorMessage = 'Insufficient permissions to delete branch';
+              } else if (error.status === 404) {
+                errorMessage = 'Branch not found';
+              }
+
+              core.setOutput('deleted', false);
+              core.setOutput('error', errorMessage);
+
+              // Don't fail the workflow for expected errors
+              if (error.status === 422 || error.status === 404) {
+                return {
+                  success: true,
+                  deleted: false,
+                  message: errorMessage
+                };
+              }
+
+              throw error;
+            }
+
+      - name: 💬 Add comment to PR
+        id: add-comment
+        if: inputs.add-comment && steps.should-delete.outputs.should-delete == 'true'
+        uses: actions/github-script@60a0d83039c74a4adc46f37e7e0b0d4e4c3b5c8e # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName = '${{ steps.branch-info.outputs.name }}';
+            const prNumber = ${{ steps.branch-info.outputs.pr-number }};
+            const deleted = ${{ steps.delete-branch.outputs.deleted }};
+            const dryRun = ${{ inputs.dry-run }};
+            const deleteError = '${{ steps.delete-branch.outputs.error }}';
+
+            let commentBody;
+
+            if (dryRun) {
+              commentBody = `🧪 **DRY RUN**: Branch \`${branchName}\` would be automatically deleted after merge.`;
+            } else if (deleted) {
+              commentBody = `🧹 **Branch automatically deleted**: \`${branchName}\` has been removed after successful merge.
+
+              ✅ **Status**: Successfully deleted
+              🕒 **Time**: ${new Date().toISOString()}
+              🤖 **Action**: Automated cleanup`;
+            } else if (deleteError) {
+              commentBody = `⚠️ **Branch deletion attempted**: \`${branchName}\` could not be deleted.
+
+              ❌ **Status**: ${deleteError}
+              🕒 **Time**: ${new Date().toISOString()}
+              ℹ️ **Note**: This is usually not a problem if the branch was already deleted manually.`;
+            }
+
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: commentBody
+              });
+
+              console.log(`✅ Comment added to PR #${prNumber}`);
+              core.setOutput('added', true);
+
+            } catch (error) {
+              console.error(`❌ Failed to add comment to PR #${prNumber}:`, error.message);
+              core.setOutput('added', false);
+            }
+
+      - name: 📊 Log deletion summary
+        run: |
+          echo "📊 Branch Deletion Summary:"
+          echo "================================"
+          echo "🌿 Branch: ${{ steps.branch-info.outputs.name }}"
+          echo "🔢 PR: #${{ steps.branch-info.outputs.pr-number }}"
+          echo "👤 Author: ${{ steps.branch-info.outputs.author }}"
+          echo "🎯 Merged into: ${{ steps.branch-info.outputs.base-branch }}"
+          echo "🗑️ Deleted: ${{ steps.delete-branch.outputs.deleted }}"
+          echo "💬 Comment added: ${{ steps.add-comment.outputs.added }}"
+          echo "📝 Reason: ${{ steps.should-delete.outputs.reason }}"
+          echo "🧪 Dry run: ${{ inputs.dry-run }}"
+
+          if [[ "${{ steps.delete-branch.outputs.error }}" != "" ]]; then
+            echo "⚠️ Error: ${{ steps.delete-branch.outputs.error }}"
+          fi
+
+      - name: ℹ️ Branch protected from deletion
+        if: steps.should-delete.outputs.should-delete == 'false'
+        run: |
+          echo "ℹ️ ${{ steps.should-delete.outputs.reason }}"
+          echo "🛡️ Protected branches: ${{ needs.validate-inputs.outputs.protected-branches-validated }}"
+
+  notify-deletion:
+    name: 📢 Notify Branch Deletion
+    runs-on: ubuntu-latest
+    needs: [delete-branch]
+    if: |
+      always() && 
+      needs.delete-branch.outputs.branch-deleted == 'true' &&
+      inputs.notify-on-deletion &&
+      secrets.SLACK_WEBHOOK_URL != ''
+    permissions:
+      contents: read
+    steps:
+      - name: 📢 Send deletion notification
+        uses: 8398a7/action-slack@28ba43ae48961b90635b50953d216767a6bea486 # v3.16.2
+        with:
+          status: success
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            🧹 Branch Automatically Deleted
+
+            🌿 **Branch**: ${{ needs.delete-branch.outputs.branch-name }}
+            🔢 **PR**: #${{ needs.delete-branch.outputs.pr-number }}
+            📝 **Reason**: ${{ needs.delete-branch.outputs.deletion-reason }}
+            💬 **Comment Added**: ${{ needs.delete-branch.outputs.comment-added }}
+
+            Repository: ${{ github.repository }}
+            Actor: ${{ github.actor }}

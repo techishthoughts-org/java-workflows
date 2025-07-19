@@ -1,0 +1,431 @@
+# .github/workflows/release-workflows.yml
+name: 🚀 Release Workflow Repository
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - 'CHANGELOG.md'
+      - 'VERSION'
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      pre-release:
+        description: 'Create pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  detect-changes:
+    name: 🔍 Detect Workflow Changes
+    runs-on: ubuntu-latest
+    outputs:
+      workflows-changed: ${{ steps.changes.outputs.workflows }}
+      actions-changed: ${{ steps.changes.outputs.actions }}
+      should-release: ${{ steps.decision.outputs.should-release }}
+      current-version: ${{ steps.version.outputs.current }}
+      next-version: ${{ steps.version.outputs.next }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Detect changes
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: changes
+        with:
+          filters: |
+            workflows:
+              - '.github/workflows/**'
+            actions:
+              - '.github/actions/**'
+
+      - name: 📊 Get current version
+        id: version
+        run: |
+          if [ -f VERSION ]; then
+            CURRENT_VERSION=$(cat VERSION)
+          else
+            # Get latest tag or default to 0.0.0
+            CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+          fi
+
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "📊 Current version: $CURRENT_VERSION"
+
+          # Calculate next version based on input or auto-detection
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            RELEASE_TYPE="${{ github.event.inputs.release-type }}"
+          else
+            # Auto-detect release type based on changes
+            if [[ "${{ steps.changes.outputs.workflows }}" == "true" ]]; then
+              RELEASE_TYPE="minor"  # Workflow changes are minor
+            elif [[ "${{ steps.changes.outputs.actions }}" == "true" ]]; then
+              RELEASE_TYPE="patch"  # Action changes are patch
+            else
+              RELEASE_TYPE="patch"  # Default to patch
+            fi
+          fi
+
+          # Parse current version
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]:-0}
+          MINOR=${VERSION_PARTS[1]:-0}
+          PATCH=${VERSION_PARTS[2]:-0}
+
+          # Calculate next version
+          case "$RELEASE_TYPE" in
+            "major")
+              NEXT_VERSION="$((MAJOR + 1)).0.0"
+              ;;
+            "minor")
+              NEXT_VERSION="$MAJOR.$((MINOR + 1)).0"
+              ;;
+            "patch")
+              NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+              ;;
+          esac
+
+          echo "next=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "📊 Next version: $NEXT_VERSION ($RELEASE_TYPE)"
+
+      - name: 🎯 Release decision
+        id: decision
+        run: |
+          SHOULD_RELEASE=false
+
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SHOULD_RELEASE=true
+            echo "🎯 Manual release triggered"
+          elif [[ "${{ steps.changes.outputs.workflows }}" == "true" || "${{ steps.changes.outputs.actions }}" == "true" ]]; then
+            SHOULD_RELEASE=true
+            echo "🎯 Auto-release triggered by workflow/action changes"
+          fi
+
+          echo "should-release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "📊 Should release: $SHOULD_RELEASE"
+
+  generate-changelog:
+    name: 📝 Generate Changelog
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should-release == 'true'
+    outputs:
+      changelog-content: ${{ steps.changelog.outputs.content }}
+      release-notes: ${{ steps.release-notes.outputs.content }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+
+      - name: 📝 Generate changelog
+        id: changelog
+        run: |
+          CURRENT_VERSION="${{ needs.detect-changes.outputs.current-version }}"
+          NEXT_VERSION="${{ needs.detect-changes.outputs.next-version }}"
+
+          echo "📝 Generating changelog for v$NEXT_VERSION"
+
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "📝 First release, generating initial changelog"
+            COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" | head -50)
+          else
+            echo "📝 Generating changelog from $LAST_TAG to HEAD"
+            COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" "$LAST_TAG"..HEAD)
+          fi
+
+          # Categorize commits
+          FEATURES=""
+          FIXES=""
+          CHORES=""
+          BREAKING=""
+
+          while IFS= read -r commit; do
+            if [[ "$commit" =~ ^-\ (feat|feature) ]]; then
+              FEATURES="$FEATURES
+$commit"
+            elif [[ "$commit" =~ ^-\ (fix|bugfix) ]]; then
+              FIXES="$FIXES
+$commit"
+            elif [[ "$commit" =~ ^-\ (BREAKING|breaking) ]]; then
+              BREAKING="$BREAKING
+$commit"
+            else
+              CHORES="$CHORES
+$commit"
+            fi
+          done <<< "$COMMITS"
+
+          # Create changelog content
+          cat > CHANGELOG_NEW.md << EOF
+          # 🚀 Release v$NEXT_VERSION
+
+          **Release Date**: $(date -u +"%Y-%m-%d")
+
+          EOF
+
+          if [ -n "$BREAKING" ]; then
+            cat >> CHANGELOG_NEW.md << EOF
+          ## 💥 Breaking Changes
+          $BREAKING
+
+          EOF
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            cat >> CHANGELOG_NEW.md << EOF
+          ## ✨ New Features
+          $FEATURES
+
+          EOF
+          fi
+
+          if [ -n "$FIXES" ]; then
+            cat >> CHANGELOG_NEW.md << EOF
+          ## 🐛 Bug Fixes
+          $FIXES
+
+          EOF
+          fi
+
+          if [ -n "$CHORES" ]; then
+            cat >> CHANGELOG_NEW.md << EOF
+          ## 🔧 Maintenance
+          $CHORES
+
+          EOF
+          fi
+
+          cat >> CHANGELOG_NEW.md << EOF
+          ## 📦 Workflow Files Changed
+
+          EOF
+
+          # List changed workflow files
+          if [ -n "$LAST_TAG" ]; then
+            CHANGED_WORKFLOWS=$(git diff --name-only "$LAST_TAG"..HEAD -- '.github/workflows/' '.github/actions/' | sort)
+          else
+            CHANGED_WORKFLOWS=$(find .github/workflows/ .github/actions/ -name "*.yml" -o -name "*.yaml" | sort)
+          fi
+
+          if [ -n "$CHANGED_WORKFLOWS" ]; then
+            while IFS= read -r file; do
+              echo "- \`$file\`" >> CHANGELOG_NEW.md
+            done <<< "$CHANGED_WORKFLOWS"
+          else
+            echo "- No workflow files changed" >> CHANGELOG_NEW.md
+          fi
+
+          cat >> CHANGELOG_NEW.md << EOF
+
+          ## 🔗 Links
+
+          - **Full Changelog**: https://github.com/${{ github.repository }}/compare/$LAST_TAG...v$NEXT_VERSION
+          - **Documentation**: https://github.com/${{ github.repository }}/blob/v$NEXT_VERSION/README.md
+
+          ---
+
+          **🤖 This release was automatically created by GitHub Actions**
+          EOF
+
+          # Output changelog content
+          CHANGELOG_CONTENT=$(cat CHANGELOG_NEW.md)
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 📋 Generate release notes
+        id: release-notes
+        run: |
+          NEXT_VERSION="${{ needs.detect-changes.outputs.next-version }}"
+
+          cat > RELEASE_NOTES.md << EOF
+          This release contains updates to the reusable GitHub Actions workflows.
+
+          ## 🎯 Quick Start
+
+          To use these workflows in your repository, reference them like this:
+
+          \`\`\`yaml
+          jobs:
+            ci:
+              uses: ${{ github.repository }}/.github/workflows/java-ci-secure.yml@v$NEXT_VERSION
+              with:
+                java-version: '21'
+          \`\`\`
+
+          ## 📚 Available Workflows
+
+          - **java-ci-secure.yml**: Secure Java CI with matrix testing
+          - **auto-tag-enhanced.yml**: Enhanced auto-tagging and releases
+          - **auto-delete-branch-enhanced.yml**: Enhanced branch cleanup
+          - **dependabot-auto-merge-enhanced.yml**: Enhanced Dependabot automation
+          - **test-workflows.yml**: Workflow testing and validation
+
+          ## 🔧 Available Composite Actions
+
+          - **setup-java-maven**: Setup Java and Maven with caching
+          - **docker-build-push**: Build and push Docker images
+
+          See the individual workflow files for detailed documentation and usage examples.
+          EOF
+
+          RELEASE_NOTES_CONTENT=$(cat RELEASE_NOTES.md)
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  create-release:
+    name: 🏷️ Create Release
+    runs-on: ubuntu-latest
+    needs: [detect-changes, generate-changelog]
+    if: needs.detect-changes.outputs.should-release == 'true'
+    outputs:
+      release-url: ${{ steps.create-release.outputs.html_url }}
+      tag-name: ${{ steps.create-release.outputs.tag_name }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📝 Update VERSION file
+        run: |
+          NEXT_VERSION="${{ needs.detect-changes.outputs.next-version }}"
+          echo "$NEXT_VERSION" > VERSION
+          echo "📝 Updated VERSION file to $NEXT_VERSION"
+
+      - name: 📝 Update CHANGELOG.md
+        run: |
+          CHANGELOG_CONTENT="${{ needs.generate-changelog.outputs.changelog-content }}"
+
+          if [ -f CHANGELOG.md ]; then
+            # Prepend new changelog to existing file
+            echo "$CHANGELOG_CONTENT" > CHANGELOG_NEW.md
+            echo "" >> CHANGELOG_NEW.md
+            cat CHANGELOG.md >> CHANGELOG_NEW.md
+            mv CHANGELOG_NEW.md CHANGELOG.md
+          else
+            # Create new changelog file
+            echo "$CHANGELOG_CONTENT" > CHANGELOG.md
+          fi
+
+          echo "📝 Updated CHANGELOG.md"
+
+      - name: 🏷️ Create and push tag
+        run: |
+          NEXT_VERSION="${{ needs.detect-changes.outputs.next-version }}"
+          TAG_NAME="v$NEXT_VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add VERSION CHANGELOG.md
+          git commit -m "🚀 Release $TAG_NAME
+
+          - Updated VERSION to $NEXT_VERSION
+          - Updated CHANGELOG.md with release notes
+
+          [skip ci]"
+
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin main
+          git push origin "$TAG_NAME"
+
+          echo "✅ Created and pushed tag: $TAG_NAME"
+
+      - name: 📦 Create GitHub Release
+        id: create-release
+        uses: softprops/action-gh-release@a74c6b72af54cfa997e81df42d94703d6313a2d0 # v2.0.6
+        with:
+          tag_name: v${{ needs.detect-changes.outputs.next-version }}
+          name: 🚀 Workflows v${{ needs.detect-changes.outputs.next-version }}
+          body: ${{ needs.generate-changelog.outputs.release-notes }}
+          draft: false
+          prerelease: ${{ github.event.inputs.pre-release == 'true' }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  validate-release:
+    name: ✅ Validate Release
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    steps:
+      - name: 📥 Checkout at tag
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          ref: ${{ needs.create-release.outputs.tag-name }}
+
+      - name: ✅ Validate workflows at tag
+        run: |
+          echo "✅ Validating workflows at tag ${{ needs.create-release.outputs.tag-name }}"
+
+          # Check that all workflow files are valid YAML
+          find .github/workflows/ -name "*.yml" -o -name "*.yaml" | while read -r file; do
+            echo "📝 Validating $file"
+            python -c "import yaml; yaml.safe_load(open('$file'))" || {
+              echo "❌ Invalid YAML in $file"
+              exit 1
+            }
+          done
+
+          # Check that VERSION file matches tag
+          if [ -f VERSION ]; then
+            VERSION_CONTENT=$(cat VERSION)
+            TAG_VERSION="${{ needs.create-release.outputs.tag-name }}"
+            TAG_VERSION=${TAG_VERSION#v}  # Remove 'v' prefix
+
+            if [ "$VERSION_CONTENT" != "$TAG_VERSION" ]; then
+              echo "❌ VERSION file ($VERSION_CONTENT) doesn't match tag ($TAG_VERSION)"
+              exit 1
+            fi
+
+            echo "✅ VERSION file matches tag"
+          fi
+
+          echo "✅ Release validation completed successfully"
+
+  notify-release:
+    name: 📢 Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release, validate-release]
+    if: always() && needs.create-release.result == 'success'
+    steps:
+      - name: 📢 Create release summary
+        run: |
+          echo "🎉 Workflow Repository Release Created!"
+          echo "======================================"
+          echo "🏷️ **Tag**: ${{ needs.create-release.outputs.tag-name }}"
+          echo "🔗 **URL**: ${{ needs.create-release.outputs.release-url }}"
+          echo "📅 **Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "🤖 **Triggered by**: ${{ github.actor }}"
+          echo ""
+          echo "## 📚 Usage"
+          echo "Reference workflows using the new tag:"
+          echo "\`\`\`yaml"
+          echo "uses: ${{ github.repository }}/.github/workflows/java-ci-secure.yml@${{ needs.create-release.outputs.tag-name }}"
+          echo "\`\`\`"
+          echo ""
+          echo "🔗 View release: ${{ needs.create-release.outputs.release-url }}"

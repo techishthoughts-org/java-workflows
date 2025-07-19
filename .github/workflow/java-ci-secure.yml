@@ -1,0 +1,235 @@
+# .github/workflows/java-ci-secure.yml
+# Purpose: Secure Java CI workflow with fine-grained permissions and input validation.
+# Inputs:
+#   java-version: Java version to use (default: 21)
+#   maven-opts: Maven JVM options (default: '-Xmx2g')
+#   test-pattern: Test pattern for Maven (default: '**/unit/**')
+#   os-matrix: Operating systems to test on (default: 'ubuntu-latest')
+#   notify-on-failure: Send notifications on failure (default: false)
+#   slack-webhook: Slack webhook URL for notifications (optional)
+# Outputs:
+#   test-results: Test execution results
+#   coverage-percentage: Code coverage percentage
+#   build-status: Overall build status
+# Secrets:
+#   SLACK_WEBHOOK_URL: Optional Slack webhook for failure notifications
+# Usage:
+#   jobs:
+#     unit-tests:
+#       uses: org/workflows/.github/workflows/java-ci-secure.yml@v1.0.0
+#       with:
+#         java-version: '17'
+#         maven-opts: '-Xmx4g'
+#         test-pattern: '**/integration/**'
+#         os-matrix: 'ubuntu-latest,windows-latest'
+#         notify-on-failure: true
+#       secrets:
+#         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+# Versioning: Reference by tag for stability.
+
+name: 🧪 Secure Unit Tests
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '21'
+      maven-opts:
+        required: false
+        type: string
+        default: '-Xmx2g'
+      test-pattern:
+        required: false
+        type: string
+        default: '**/unit/**'
+      os-matrix:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      notify-on-failure:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      test-results:
+        description: "Test execution results summary"
+        value: ${{ jobs.unit-tests.outputs.test-results }}
+      coverage-percentage:
+        description: "Code coverage percentage"
+        value: ${{ jobs.unit-tests.outputs.coverage-percentage }}
+      build-status:
+        description: "Overall build status"
+        value: ${{ jobs.unit-tests.outputs.build-status }}
+    secrets:
+      SLACK_WEBHOOK_URL:
+        description: "Slack webhook URL for failure notifications"
+        required: false
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      java-versions: ${{ steps.validate.outputs.java-versions }}
+      os-list: ${{ steps.validate.outputs.os-list }}
+      maven-opts-validated: ${{ steps.validate.outputs.maven-opts-validated }}
+    steps:
+      - name: 🔍 Validate Java version
+        id: validate
+        run: |
+          JAVA_VERSION="${{ inputs.java-version }}"
+          OS_MATRIX="${{ inputs.os-matrix }}"
+          MAVEN_OPTS="${{ inputs.maven-opts }}"
+
+          # Validate Java version
+          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22)$ ]]; then
+            echo "❌ Invalid Java version: $JAVA_VERSION. Supported: 8, 11, 17, 21, 22"
+            exit 1
+          fi
+
+          # Validate OS matrix
+          IFS=',' read -ra OS_ARRAY <<< "$OS_MATRIX"
+          VALID_OS=()
+          for os in "${OS_ARRAY[@]}"; do
+            os=$(echo "$os" | xargs) # trim whitespace
+            if [[ "$os" =~ ^(ubuntu-latest|ubuntu-20.04|ubuntu-22.04|windows-latest|windows-2019|windows-2022|macos-latest|macos-11|macos-12)$ ]]; then
+              VALID_OS+=(""$os"")
+            else
+              echo "❌ Invalid OS: $os"
+              exit 1
+            fi
+          done
+
+          # Validate Maven opts
+          if [[ ! "$MAVEN_OPTS" =~ ^-X ]]; then
+            echo "⚠️ Maven opts should start with -X, using default"
+            MAVEN_OPTS="-Xmx2g"
+          fi
+
+          # Output validated values
+          OS_JSON="[$(IFS=,; echo "${VALID_OS[*]}")]"
+          echo "java-versions=["$JAVA_VERSION"]" >> $GITHUB_OUTPUT
+          echo "os-list=$OS_JSON" >> $GITHUB_OUTPUT
+          echo "maven-opts-validated=$MAVEN_OPTS" >> $GITHUB_OUTPUT
+
+          echo "✅ Validation completed"
+          echo "  Java: $JAVA_VERSION"
+          echo "  OS: $OS_JSON"
+          echo "  Maven opts: $MAVEN_OPTS"
+
+  unit-tests:
+    name: 🧪 Tests (${{ matrix.os }}, Java ${{ matrix.java-version }})
+    runs-on: ${{ matrix.os }}
+    needs: validate-inputs
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write # For coverage comments
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(needs.validate-inputs.outputs.os-list) }}
+        java-version: ${{ fromJson(needs.validate-inputs.outputs.java-versions) }}
+    outputs:
+      test-results: ${{ steps.test-summary.outputs.results }}
+      coverage-percentage: ${{ steps.coverage.outputs.percentage }}
+      build-status: ${{ steps.test-summary.outputs.status }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: ☕ Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+
+      - name: 📦 Cache Maven dependencies
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: 🧪 Run unit tests with coverage
+        id: tests
+        run: |
+          echo "🧪 Running tests with pattern: ${{ inputs.test-pattern }}"
+          ./mvnw test -Dtest="${{ inputs.test-pattern }}" -B             -Djacoco.skip=false             -Dmaven.test.failure.ignore=true
+        env:
+          MAVEN_OPTS: ${{ needs.validate-inputs.outputs.maven-opts-validated }}
+        continue-on-error: true
+
+      - name: 📊 Generate coverage report
+        id: coverage
+        run: |
+          ./mvnw jacoco:report -B
+
+          # Extract coverage percentage
+          if [ -f target/site/jacoco/index.html ]; then
+            COVERAGE=$(grep -o 'Total[^%]*%' target/site/jacoco/index.html | grep -o '[0-9]*%' | head -1 || echo "0%")
+            echo "percentage=${COVERAGE}" >> $GITHUB_OUTPUT
+            echo "📊 Code coverage: $COVERAGE"
+          else
+            echo "percentage=0%" >> $GITHUB_OUTPUT
+            echo "⚠️ No coverage report found"
+          fi
+
+      - name: 📊 Generate test report
+        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        if: always()
+        with:
+          name: Unit Tests Results (${{ matrix.os }}, Java ${{ matrix.java-version }})
+          path: target/surefire-reports/*.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: 📋 Test summary
+        id: test-summary
+        if: always()
+        run: |
+          if [ -f target/surefire-reports/TEST-*.xml ]; then
+            TOTAL=$(grep -o 'tests="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+            FAILURES=$(grep -o 'failures="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+            ERRORS=$(grep -o 'errors="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+
+            PASSED=$((TOTAL - FAILURES - ERRORS))
+
+            if [ $FAILURES -eq 0 ] && [ $ERRORS -eq 0 ]; then
+              STATUS="success"
+              echo "✅ All tests passed"
+            else
+              STATUS="failure"
+              echo "❌ Tests failed"
+            fi
+
+            RESULTS="Total: $TOTAL, Passed: $PASSED, Failed: $FAILURES, Errors: $ERRORS"
+            echo "results=$RESULTS" >> $GITHUB_OUTPUT
+            echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+            echo "📊 Test Results: $RESULTS"
+          else
+            echo "results=No test results found" >> $GITHUB_OUTPUT
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🚨 Notify on failure
+        if: |
+          failure() && 
+          inputs.notify-on-failure && 
+          secrets.SLACK_WEBHOOK_URL != ''
+        uses: 8398a7/action-slack@28ba43ae48961b90635b50953d216767a6bea486 # v3.16.2
+        with:
+          status: failure
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          text: |
+            🚨 Java CI Tests Failed
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            OS: ${{ matrix.os }}
+            Java: ${{ matrix.java-version }}
+            Actor: ${{ github.actor }}

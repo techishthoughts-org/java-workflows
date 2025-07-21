@@ -88,6 +88,7 @@ jobs:
     steps:
       - name: 🔍 Validate inputs
         id: validate
+        shell: bash
         run: |
           JAVA_VERSION="${{ inputs.java-version }}"
           BUILD_TOOL="${{ inputs.build-tool }}"
@@ -214,6 +215,7 @@ jobs:
 
       - name: 🧪 Run tests
         id: run-tests
+        shell: bash
         run: |
           BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
 
@@ -234,6 +236,7 @@ jobs:
 
       - name: 📊 Extract test results
         id: test-summary
+        shell: bash
         run: |
           BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
 
@@ -269,6 +272,7 @@ jobs:
 
       - name: 📊 Extract coverage
         id: coverage
+        shell: bash
         run: |
           BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
 

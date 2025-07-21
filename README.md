@@ -123,14 +123,14 @@ jobs:
       maven-opts: '-Xmx4g'
 ```
 
-### 2. **Java CI v2.0.0 (Enhanced Features - Maven + Gradle)**
+### 2. **Java CI v2.0.1 (Enhanced Features - Maven + Gradle)**
 
 ```yaml
-name: CI v2.0.0
+name: CI v2.0.1
 on: [push, pull_request]
 jobs:
   test:
-    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.0.0
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.0.1
     with:
       java-version: '17'
       build-tool: 'gradle'  # or 'maven'

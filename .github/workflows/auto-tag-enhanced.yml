@@ -315,6 +315,7 @@ jobs:
           tag_name: ${{ steps.project-version.outputs.tag-name }}
           name: 🚀 Release ${{ steps.project-version.outputs.tag-name }}
           body_path: CHANGELOG.md
+          generate_release_notes: true
           draft: false
           prerelease: ${{ contains(steps.project-version.outputs.version, 'SNAPSHOT') || contains(steps.project-version.outputs.version, 'RC') }}
           files: |
@@ -384,8 +385,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [auto-tag-and-release, publish-packages]
     if: |
-      always() && 
-      needs.auto-tag-and-release.result == 'success' && 
+      always() &&
+      needs.auto-tag-and-release.result == 'success' &&
       inputs.notify-on-success &&
       secrets.SLACK_WEBHOOK_URL != ''
     permissions:
@@ -413,7 +414,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [auto-tag-and-release, publish-packages]
     if: |
-      always() && 
+      always() &&
       (needs.auto-tag-and-release.result == 'failure' || needs.publish-packages.result == 'failure') &&
       inputs.notify-on-failure &&
       secrets.SLACK_WEBHOOK_URL != ''

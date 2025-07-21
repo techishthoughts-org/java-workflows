@@ -362,9 +362,9 @@ $commit"
           tag_name: v${{ needs.detect-changes.outputs.next-version }}
           name: 🚀 Workflows v${{ needs.detect-changes.outputs.next-version }}
           body: ${{ needs.generate-changelog.outputs.release-notes }}
+          generate_release_notes: true
           draft: false
           prerelease: ${{ github.event.inputs.pre-release == 'true' }}
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

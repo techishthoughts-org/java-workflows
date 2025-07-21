@@ -1,0 +1,15 @@
+# Example workflow for Java CI v1.0.0 (Stable Foundation - Maven Only)
+# Place this file in your repository at: .github/workflows/ci.yml
+
+name: CI v1.0.0 (Maven)
+on: [push, pull_request]
+
+jobs:
+  test:
+    uses: your-username/java-workflows/.github/workflows/java-ci-secure.yml@v1.0.0
+    with:
+      java-version: '21'
+      os-matrix: 'ubuntu-latest,windows-latest'
+      maven-opts: '-Xmx4g'
+      test-pattern: '**/unit/**'
+      coverage-tool: 'jacoco'

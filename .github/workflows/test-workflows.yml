@@ -1,0 +1,149 @@
+# .github/workflows/test-workflows.yml
+# Purpose: Test and validate all reusable workflows
+# This workflow validates the reusable workflows to ensure they work correctly
+
+name: 🧪 Test Reusable Workflows
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-yaml:
+    name: ✅ Validate YAML Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: 🔍 Validate Workflow YAML
+        run: |
+          echo "🔍 Validating workflow YAML files..."
+          for file in .github/workflows/*.yml; do
+            echo "Validating $file"
+            python3 -c "import yaml; yaml.safe_load(open('$file', 'r'))"
+            echo "✅ $file is valid"
+          done
+
+      - name: 🔍 Validate Action YAML
+        run: |
+          echo "🔍 Validating action YAML files..."
+          for file in .github/actions/*/action.yml; do
+            echo "Validating $file"
+            python3 -c "import yaml; yaml.safe_load(open('$file', 'r'))"
+            echo "✅ $file is valid"
+          done
+
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: 🔍 Check for hardcoded secrets
+        run: |
+          echo "🔍 Scanning for potential secrets..."
+          if grep -r -i "password\|secret\|token\|key" .github/workflows/ .github/actions/ | grep -v "#\|TODO\|FIXME\|example"; then
+            echo "⚠️ Potential secrets found in workflow files"
+            exit 1
+          else
+            echo "✅ No hardcoded secrets found"
+          fi
+
+      - name: 🔍 Check for SHA-pinned actions
+        run: |
+          echo "🔍 Checking for SHA-pinned actions..."
+          for file in .github/workflows/*.yml .github/actions/*/action.yml; do
+            if grep -q "uses:.*@[a-f0-9]\{40\}" "$file"; then
+              echo "✅ $file uses SHA-pinned actions"
+            else
+              echo "⚠️ $file may not use SHA-pinned actions"
+            fi
+          done
+
+  test-composite-actions:
+    name: 🔧 Test Composite Actions
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: 🔧 Test Java & Maven Setup
+        uses: ./.github/actions/setup-java-maven
+        with:
+          java-version: '21'
+          maven-version: '3.8.8'
+
+      - name: ✅ Verify Java Setup
+        run: |
+          java -version
+          mvn -version
+          echo "✅ Java and Maven setup verified"
+
+  validate-workflow-structure:
+    name: 📋 Validate Workflow Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: 🔍 Check workflow files exist
+        run: |
+          echo "🔍 Checking required workflow files..."
+          required_workflows=(
+            "java-ci-secure.yml"
+            "auto-tag-enhanced.yml"
+            "auto-delete-branch-enhanced.yml"
+            "dependabot-auto-merge-enhanced.yml"
+            "release-workflows.yml"
+          )
+
+          for workflow in "${required_workflows[@]}"; do
+            if [ -f ".github/workflows/$workflow" ]; then
+              echo "✅ $workflow exists"
+            else
+              echo "❌ $workflow missing"
+              exit 1
+            fi
+          done
+
+      - name: 🔍 Check action files exist
+        run: |
+          echo "🔍 Checking required action files..."
+          required_actions=(
+            "setup-java-maven/action.yml"
+            "docker-build-push/action.yml"
+          )
+
+          for action in "${required_actions[@]}"; do
+            if [ -f ".github/actions/$action" ]; then
+              echo "✅ $action exists"
+            else
+              echo "❌ $action missing"
+              exit 1
+            fi
+          done
+
+      - name: 🔍 Validate workflow_call triggers
+        run: |
+          echo "🔍 Checking workflow_call triggers..."
+          for file in .github/workflows/*.yml; do
+            if grep -q "workflow_call:" "$file"; then
+              echo "✅ $file has workflow_call trigger"
+            else
+              echo "⚠️ $file may not be reusable (no workflow_call)"
+            fi
+          done

@@ -1,0 +1,288 @@
+# .github/workflows/java-ci-universal.yml
+# Purpose: Enhanced Java CI workflow v2.0.0 supporting both Maven and Gradle with configurable Java versions
+# Version: 2.0.0
+# Inputs:
+#   java-version: Java version to use (default: 21)
+#   build-tool: Build tool to use - 'maven' or 'gradle' (default: 'maven')
+#   gradle-version: Gradle version when using Gradle (default: '8.5')
+#   maven-opts: Maven JVM options (default: '-Xmx2g')
+#   test-pattern: Test pattern for Maven/Gradle (default: '**/unit/**')
+#   os-matrix: Operating systems to test on (default: 'ubuntu-latest')
+#   coverage-tool: Coverage tool to use - 'jacoco' or 'cobertura' (default: 'jacoco')
+# Outputs:
+#   test-results: Test execution results
+#   coverage-percentage: Code coverage percentage
+#   build-status: Overall build status
+#   build-tool-used: Build tool that was used
+# Usage:
+#   jobs:
+#     test:
+#       uses: org/workflows/.github/workflows/java-ci-universal.yml@v2.0.0
+#       with:
+#         java-version: '17'
+#         build-tool: 'gradle'
+#         gradle-version: '8.5'
+#         os-matrix: 'ubuntu-latest,windows-latest'
+# Versioning: Reference by tag for stability.
+
+name: 🧪 Enhanced Java CI v2.0.0
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '21'
+      build-tool:
+        required: false
+        type: string
+        default: 'maven'
+      gradle-version:
+        required: false
+        type: string
+        default: '8.5'
+      maven-opts:
+        required: false
+        type: string
+        default: '-Xmx2g'
+      test-pattern:
+        required: false
+        type: string
+        default: '**/unit/**'
+      os-matrix:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      coverage-tool:
+        required: false
+        type: string
+        default: 'jacoco'
+    outputs:
+      test-results:
+        description: "Test execution results summary"
+        value: ${{ jobs.enhanced-tests.outputs.test-results }}
+      coverage-percentage:
+        description: "Code coverage percentage"
+        value: ${{ jobs.enhanced-tests.outputs.coverage-percentage }}
+      build-status:
+        description: "Overall build status"
+        value: ${{ jobs.enhanced-tests.outputs.build-status }}
+      build-tool-used:
+        description: "Build tool that was used"
+        value: ${{ jobs.enhanced-tests.outputs.build-tool-used }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Enhanced Inputs v2.0.0
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      java-versions: ${{ steps.validate.outputs.java-versions }}
+      os-list: ${{ steps.validate.outputs.os-list }}
+      build-tool-validated: ${{ steps.validate.outputs.build-tool }}
+      gradle-version-validated: ${{ steps.validate.outputs.gradle-version }}
+      maven-opts-validated: ${{ steps.validate.outputs.maven-opts }}
+      coverage-tool-validated: ${{ steps.validate.outputs.coverage-tool }}
+    steps:
+      - name: 🔍 Validate inputs
+        id: validate
+        run: |
+          JAVA_VERSION="${{ inputs.java-version }}"
+          BUILD_TOOL="${{ inputs.build-tool }}"
+          GRADLE_VERSION="${{ inputs.gradle-version }}"
+          OS_MATRIX="${{ inputs.os-matrix }}"
+          MAVEN_OPTS="${{ inputs.maven-opts }}"
+          COVERAGE_TOOL="${{ inputs.coverage-tool }}"
+
+          # Validate Java version
+          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22)$ ]]; then
+            echo "❌ Invalid Java version: $JAVA_VERSION. Supported: 8, 11, 17, 21, 22"
+            exit 1
+          fi
+
+          # Validate build tool
+          if [[ ! "$BUILD_TOOL" =~ ^(maven|gradle)$ ]]; then
+            echo "❌ Invalid build tool: $BUILD_TOOL. Supported: maven, gradle"
+            exit 1
+          fi
+
+          # Validate Gradle version
+          if [[ "$BUILD_TOOL" == "gradle" ]]; then
+            if [[ ! "$GRADLE_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+              echo "❌ Invalid Gradle version: $GRADLE_VERSION"
+              exit 1
+            fi
+          fi
+
+          # Validate OS matrix
+          IFS=',' read -ra OS_ARRAY <<< "$OS_MATRIX"
+          VALID_OS=()
+          for os in "${OS_ARRAY[@]}"; do
+            os=$(echo "$os" | xargs) # trim whitespace
+            if [[ "$os" =~ ^(ubuntu-latest|ubuntu-20.04|ubuntu-22.04|windows-latest|windows-2019|windows-2022|macos-latest|macos-11|macos-12)$ ]]; then
+              VALID_OS+=(""$os"")
+            else
+              echo "❌ Invalid OS: $os"
+              exit 1
+            fi
+          done
+
+          # Validate Maven opts
+          if [[ "$BUILD_TOOL" == "maven" && ! "$MAVEN_OPTS" =~ ^-X ]]; then
+            echo "⚠️ Maven opts should start with -X, using default"
+            MAVEN_OPTS="-Xmx2g"
+          fi
+
+          # Validate coverage tool
+          if [[ ! "$COVERAGE_TOOL" =~ ^(jacoco|cobertura)$ ]]; then
+            echo "❌ Invalid coverage tool: $COVERAGE_TOOL. Supported: jacoco, cobertura"
+            exit 1
+          fi
+
+          # Output validated values
+          OS_JSON="[$(IFS=,; echo "${VALID_OS[*]}")]"
+          echo "java-versions=["$JAVA_VERSION"]" >> $GITHUB_OUTPUT
+          echo "os-list=$OS_JSON" >> $GITHUB_OUTPUT
+          echo "build-tool=$BUILD_TOOL" >> $GITHUB_OUTPUT
+          echo "gradle-version=$GRADLE_VERSION" >> $GITHUB_OUTPUT
+          echo "maven-opts-validated=$MAVEN_OPTS" >> $GITHUB_OUTPUT
+          echo "coverage-tool=$COVERAGE_TOOL" >> $GITHUB_OUTPUT
+
+          echo "✅ Validation completed"
+          echo "  Java: $JAVA_VERSION"
+          echo "  Build Tool: $BUILD_TOOL"
+          echo "  Gradle Version: $GRADLE_VERSION"
+          echo "  OS: $OS_JSON"
+          echo "  Maven opts: $MAVEN_OPTS"
+          echo "  Coverage Tool: $COVERAGE_TOOL"
+
+  enhanced-tests:
+    name: 🧪 Enhanced Tests v2.0.0 (${{ needs.validate-inputs.outputs.build-tool-validated }})
+    runs-on: ${{ matrix.os }}
+    needs: validate-inputs
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write # For coverage comments
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(needs.validate-inputs.outputs.os-list) }}
+        java-version: ${{ fromJson(needs.validate-inputs.outputs.java-versions) }}
+    outputs:
+      test-results: ${{ steps.test-summary.outputs.results }}
+      coverage-percentage: ${{ steps.coverage.outputs.percentage }}
+      build-status: ${{ steps.test-summary.outputs.status }}
+      build-tool-used: ${{ needs.validate-inputs.outputs.build-tool-validated }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: ☕ Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+
+      - name: 📦 Setup Maven (if using Maven)
+        if: needs.validate-inputs.outputs.build-tool-validated == 'maven'
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: 📦 Setup Gradle (if using Gradle)
+        if: needs.validate-inputs.outputs.build-tool-validated == 'gradle'
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: 🧪 Run tests
+        id: run-tests
+        run: |
+          BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
+
+          if [[ "$BUILD_TOOL" == "maven" ]]; then
+            echo "🧪 Running Maven tests with pattern: ${{ inputs.test-pattern }}"
+            ./mvnw test -Dtest="${{ inputs.test-pattern }}" -B \
+              -Djacoco.skip=false \
+              -Dmaven.test.failure.ignore=true
+          elif [[ "$BUILD_TOOL" == "gradle" ]]; then
+            echo "🧪 Running Gradle tests with pattern: ${{ inputs.test-pattern }}"
+            ./gradlew test --info \
+              --tests "${{ inputs.test-pattern }}" \
+              --continue
+          fi
+        env:
+          MAVEN_OPTS: ${{ needs.validate-inputs.outputs.maven-opts-validated }}
+        continue-on-error: true
+
+      - name: 📊 Extract test results
+        id: test-summary
+        run: |
+          BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
+
+          if [[ "$BUILD_TOOL" == "maven" ]]; then
+            if [ -f target/surefire-reports/TEST-*.xml ]; then
+              TOTAL=$(grep -o 'tests="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+              FAILURES=$(grep -o 'failures="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+              ERRORS=$(grep -o 'errors="[0-9]*"' target/surefire-reports/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+            fi
+          elif [[ "$BUILD_TOOL" == "gradle" ]]; then
+            if [ -f build/test-results/test/TEST-*.xml ]; then
+              TOTAL=$(grep -o 'tests="[0-9]*"' build/test-results/test/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+              FAILURES=$(grep -o 'failures="[0-9]*"' build/test-results/test/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+              ERRORS=$(grep -o 'errors="[0-9]*"' build/test-results/test/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}' || echo "0")
+            fi
+          fi
+
+          PASSED=$((TOTAL - FAILURES - ERRORS))
+
+          if [ $FAILURES -eq 0 ] && [ $ERRORS -eq 0 ]; then
+            STATUS="success"
+            echo "✅ All tests passed"
+          else
+            STATUS="failure"
+            echo "❌ Tests failed"
+          fi
+
+          RESULTS="Total: $TOTAL, Passed: $PASSED, Failed: $FAILURES, Errors: $ERRORS"
+          echo "results=$RESULTS" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+          echo "📊 Test Results: $RESULTS"
+
+      - name: 📊 Extract coverage
+        id: coverage
+        run: |
+          BUILD_TOOL="${{ needs.validate-inputs.outputs.build-tool-validated }}"
+
+          if [[ "$BUILD_TOOL" == "maven" ]]; then
+            if [ -f target/site/jacoco/jacoco.xml ]; then
+              COVERAGE=$(grep -o 'lineRate="[0-9.]*"' target/site/jacoco/jacoco.xml | grep -o '[0-9.]*' | head -1)
+              PERCENTAGE=$(echo "$COVERAGE * 100" | bc -l | cut -d. -f1)
+              echo "percentage=$PERCENTAGE" >> $GITHUB_OUTPUT
+              echo "📊 Coverage: ${PERCENTAGE}%"
+            else
+              echo "percentage=0" >> $GITHUB_OUTPUT
+              echo "📊 No coverage data found"
+            fi
+          elif [[ "$BUILD_TOOL" == "gradle" ]]; then
+            if [ -f build/reports/jacoco/test/jacocoTestReport.xml ]; then
+              COVERAGE=$(grep -o 'lineRate="[0-9.]*"' build/reports/jacoco/test/jacocoTestReport.xml | grep -o '[0-9.]*' | head -1)
+              PERCENTAGE=$(echo "$COVERAGE * 100" | bc -l | cut -d. -f1)
+              echo "percentage=$PERCENTAGE" >> $GITHUB_OUTPUT
+              echo "📊 Coverage: ${PERCENTAGE}%"
+            else
+              echo "percentage=0" >> $GITHUB_OUTPUT
+              echo "📊 No coverage data found"
+            fi
+          fi

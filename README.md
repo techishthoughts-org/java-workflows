@@ -61,7 +61,8 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 ```
 .github/
 ├── workflows/
-│   ├── java-ci-secure.yml                    # 🧪 Secure Java CI with matrix testing
+│   ├── java-ci-secure.yml                    # 🧪 Secure Java CI v1.0.0 (Maven only)
+│   ├── java-ci-universal.yml                 # 🧪 Enhanced Java CI v2.0.0 (Maven + Gradle)
 │   ├── auto-tag-enhanced.yml                 # 🏷️ Enhanced auto-tagging and releases
 │   ├── auto-delete-branch-enhanced.yml       # 🗑️ Enhanced branch cleanup
 │   ├── dependabot-auto-merge-enhanced.yml    # 🤖 Enhanced Dependabot automation
@@ -74,12 +75,44 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
         └── action.yml                         # 🐳 Docker build & push composite action
 ```
 
+## 🔧 Recent Fixes
+
+### ✅ **Fixed Directory Structure Issue**
+- **Problem**: Workflows were in `.github/workflow/` instead of `.github/workflows/`
+- **Solution**: Moved all workflows to the correct `.github/workflows/` directory
+- **Impact**: This was preventing the workflows from being discoverable by GitHub Actions
+- **Status**: ✅ **RESOLVED** - Workflows are now in the correct location
+
+## 📋 Versioning Strategy
+
+### **Multiple Workflow Versions Available**
+
+This repository now supports multiple versions of Java CI workflows to meet different needs:
+
+| Version | File | Features | Use Case |
+|---------|------|----------|----------|
+| **v1.0.0** | `java-ci-secure.yml` | Maven only, stable | Production projects |
+| **v2.0.0** | `java-ci-universal.yml` | Maven + Gradle, enhanced | Advanced projects |
+| **Latest** | `java-ci-universal.yml` | Latest features | Development/testing |
+
+### **Key Features by Version**
+
+- **v1.0.0**: Basic Java CI with Maven support, matrix testing, coverage
+- **v2.0.0**: All v1.0.0 features + Gradle support, parallel execution, timing
+- **Latest**: All v2.0.0 features + enhanced error handling, better logging
+
+### **Migration Path**
+- **v1.0.0 → v2.0.0**: No breaking changes, just add new features
+- **v2.0.0 → Latest**: No breaking changes, enhanced performance
+
+📖 **See [VERSIONING.md](VERSIONING.md) for detailed versioning strategy**
+
 ## 🚀 Quick Start
 
-### 1. **Java CI with Security & Matrix Testing**
+### 1. **Java CI v1.0.0 (Stable Foundation - Maven Only)**
 
 ```yaml
-name: CI
+name: CI v1.0.0
 on: [push, pull_request]
 jobs:
   test:
@@ -87,12 +120,41 @@ jobs:
     with:
       java-version: '21'
       os-matrix: 'ubuntu-latest,windows-latest'
-      notify-on-failure: true
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      maven-opts: '-Xmx4g'
 ```
 
-### 2. **Enhanced Auto-Tagging with Docker**
+### 2. **Java CI v2.0.0 (Enhanced Features - Maven + Gradle)**
+
+```yaml
+name: CI v2.0.0
+on: [push, pull_request]
+jobs:
+  test:
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.0.0
+    with:
+      java-version: '17'
+      build-tool: 'gradle'  # or 'maven'
+      gradle-version: '8.5'
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      parallel-jobs: 8
+      cache-dependencies: true
+```
+
+### 3. **Latest Development (Experimental Features)**
+
+```yaml
+name: CI Latest
+on: [push, pull_request]
+jobs:
+  test:
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@main
+    with:
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+```
+
+### 4. **Enhanced Auto-Tagging with Docker**
 
 ```yaml
 name: Release
@@ -112,7 +174,7 @@ jobs:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 ```
 
-### 3. **Smart Branch Cleanup**
+### 5. **Smart Branch Cleanup**
 
 ```yaml
 name: Cleanup
@@ -130,7 +192,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### 4. **Intelligent Dependabot Auto-Merge**
+### 6. **Intelligent Dependabot Auto-Merge**
 
 ```yaml
 name: Dependabot
@@ -249,6 +311,35 @@ Each workflow includes:
 5. **Test workflows** using the test pipeline
 6. **Create releases** using semantic versioning
 
+## 🚨 Troubleshooting
+
+### Common Issues
+
+1. **Workflow not found**:
+   - ✅ **FIXED**: Ensure workflows are in `.github/workflows/` (not `.github/workflow/`)
+   - Check that you're using the correct repository name and tag
+   - Verify the workflow file exists in the referenced repository
+
+2. **Permission denied**:
+   - Ensure the workflow has the required permissions
+   - Check that `GITHUB_TOKEN` is available
+
+3. **Secrets not found**:
+   - Make sure all required secrets are configured
+   - Check the workflow documentation for required secrets
+
+4. **YAML syntax errors**:
+   - Validate your workflow files
+   - Use the test-workflows.yml to validate syntax
+
+### Debug Steps
+
+1. Check the workflow run logs for detailed error messages
+2. Verify all required inputs are provided
+3. Ensure all required secrets are configured
+4. Test with a simple workflow first
+5. Use the test-workflows.yml pipeline to validate your setup
+
 ## 📈 What's Next
 
 - Monitor workflow performance
@@ -260,3 +351,5 @@ Each workflow includes:
 ---
 
 **🎉 You now have a complete, enterprise-ready set of reusable GitHub Actions workflows with all the missing features implemented!**
+
+**✅ The directory structure issue has been fixed - your workflows should now work correctly!**

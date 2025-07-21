@@ -1,0 +1,17 @@
+# Example workflow for Java CI v2.0.0 (Enhanced Features - Maven + Gradle)
+# Place this file in your repository at: .github/workflows/ci.yml
+
+name: CI v2.0.0 (Enhanced)
+on: [push, pull_request]
+
+jobs:
+  test:
+    uses: your-username/java-workflows/.github/workflows/java-ci-universal.yml@v2.0.0
+    with:
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      gradle-version: '8.5'  # only needed for gradle
+      maven-opts: '-Xmx4g'   # only needed for maven
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      test-pattern: '**/unit/**'
+      coverage-tool: 'jacoco'

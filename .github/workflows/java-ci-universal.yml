@@ -142,7 +142,14 @@ jobs:
           fi
 
           # Output validated values
-          OS_JSON=$(printf '["%s"]' "$(IFS='","'; echo "${VALID_OS[*]}")")
+          OS_JSON="["
+          for i in "${!VALID_OS[@]}"; do
+            if [ $i -gt 0 ]; then
+              OS_JSON="$OS_JSON,"
+            fi
+            OS_JSON="$OS_JSON\"${VALID_OS[$i]}\""
+          done
+          OS_JSON="$OS_JSON]"
           echo "java-versions=["$JAVA_VERSION"]" >> $GITHUB_OUTPUT
           echo "os-list=$OS_JSON" >> $GITHUB_OUTPUT
           echo "build-tool=$BUILD_TOOL" >> $GITHUB_OUTPUT

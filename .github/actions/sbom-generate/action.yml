@@ -1,5 +1,5 @@
 name: 'SBOM Generation'
-description: 'Generate Software Bill of Materials (SBOM) for supply chain security'
+description: 'Generate Software Bill of Materials (SBOM) for supply chain security. Supports Java 11-25 (all LTS versions)'
 inputs:
   build-tool:
     description: 'Build tool: maven or gradle'

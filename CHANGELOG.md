@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.0.0] - 2025-11-XX
+## [3.1.0] - 2025-11-04
+
+### Added
+- **Java 25 (LTS) Support** - Added support for Java 25 across all workflows and composite actions
+  - Updated `java-ci.yml` workflow
+  - Updated `k8s-deploy.yml` workflow
+  - Updated all composite actions (setup-java-maven, setup-java-gradle, sbom-generate)
+  - Full LTS support: Java 11, 17, 21, 25
+  - Non-LTS support: Java 23, 24
+
+### Changed
+- Enhanced workflow version to v3.1.0
+- Updated documentation to reflect Java 25 support
+- Improved build summaries to highlight Java 11-25 range
+
+### Documentation
+- Updated workflow headers with Java 25 support
+- Enhanced composite action descriptions
+
+## [3.0.0] - 2025-11-04
 
 ### 🔴 Breaking Changes
 - **Removed Java 8 support** - Minimum Java version is now 11

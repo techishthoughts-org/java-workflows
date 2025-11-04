@@ -1,5 +1,5 @@
 name: 'Setup Java & Gradle'
-description: 'Sets up Java and Gradle with caching and wrapper support'
+description: 'Sets up Java and Gradle with caching and wrapper support. Supports Java 11-25 (all LTS versions)'
 inputs:
   java-version:
     description: 'Java version to use'

@@ -1,7 +1,7 @@
 # .github/workflows/java-ci.yml
-# Purpose: Unified Java CI workflow v3.0.0 with auto-detection and modern features
-# Version: 3.0.0
-# Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24+
+# Purpose: Unified Java CI workflow v3.1.0 with auto-detection and modern features
+# Version: 3.1.0
+# Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24, 25 (LTS)
 # Breaking Changes: Java 8 removed, simplified configuration, auto-detection
 #
 # Inputs:
@@ -26,7 +26,7 @@
 #       with:
 #         java-version: '21'
 
-name: 🚀 Java CI v3.0.0
+name: 🚀 Java CI v3.1.0
 
 on:
   workflow_call:
@@ -229,7 +229,7 @@ jobs:
         shell: bash
         run: |
           cat >> $GITHUB_STEP_SUMMARY <<EOF
-          ### 🚀 Java CI v3.0.0 Summary
+          ### 🚀 Java CI v3.1.0 Summary
 
           | Metric | Value |
           |--------|-------|
@@ -240,9 +240,9 @@ jobs:
           | **Coverage** | ${{ steps.coverage.outputs.percentage || 'N/A' }}% |
           | **Status** | ✅ Success |
 
-          **v3.0.0 Features:**
+          **v3.1.0 Features:**
           - ✅ Auto-detection of build tools
-          - ✅ Java 11+ only (modern focus)
+          - ✅ Java 11-25 support (all LTS versions)
           - ✅ Simplified configuration
           - ✅ Enhanced caching
           - ✅ Cloud-native ready
@@ -262,5 +262,5 @@ jobs:
     steps:
       - name: 📊 Summary
         run: |
-          echo "✅ Java CI v3.0.0 completed successfully"
+          echo "✅ Java CI v3.1.0 completed successfully"
           echo "Build Tool: ${{ needs.detect-and-build.outputs.build-tool }}"

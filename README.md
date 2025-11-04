@@ -2,16 +2,25 @@
 
 This repository contains a comprehensive set of production-ready, reusable GitHub Actions workflows for Java projects with all the missing enterprise features implemented.
 
-## 🎉 **What's New in v3.0.0** 🔴 BREAKING CHANGES
+## 🎉 **What's New in v3.1.0** ✨ Java 25 Support!
 
-### 🔴 Breaking Changes
+### ✨ New Features
+
+- **☕ Java 25 (LTS) Support**: Full support for Java 25 across all workflows
+  - All LTS versions: **11, 17, 21, 25**
+  - Non-LTS versions: 23, 24
+  - Updated workflows: `java-ci.yml`, `k8s-deploy.yml`
+  - Updated all composite actions
+- **📊 Enhanced Documentation**: Updated all docs with Java 25 support
+
+### 🔴 Breaking Changes (from v2.x → v3.x)
 
 - **Java 8 Removed**: Minimum Java version is now **11**
 - **Unified Workflow**: New `java-ci.yml` replaces `java-ci-universal.yml` and `java-ci-secure.yml`
 - **Auto-Detection**: Build tool now auto-detected (no longer required input)
 - **Simplified Configuration**: 50% fewer required inputs
 
-### ✨ New Features
+### ✨ v3.x Features
 
 - **☸️ Kubernetes Deployment**: Deploy to EKS, GKE, AKS, or custom clusters
 - **📦 SBOM Generation**: Software Bill of Materials for supply chain security
@@ -192,7 +201,8 @@ This repository now supports multiple versions of Java CI workflows to meet diff
 
 | Version | File | Features | Use Case |
 |---------|------|----------|----------|
-| **v3.0.0** 🔴 | `java-ci.yml` | Java 11+, Auto-detect, K8s, SBOM | **Latest (Breaking)** |
+| **v3.1.0** ⭐ | `java-ci.yml` | Java 11-25, Auto-detect, K8s, SBOM | **Latest Stable** |
+| **v3.0.0** | `java-ci.yml` | Java 11-23, Auto-detect, K8s, SBOM | Stable |
 | **v2.2.0** | `java-ci-universal.yml` | All v2.1 + Native Image, JMH, Test Reports | Stable (Java 8-23) |
 | **v2.1.0** | `java-ci-universal.yml` | All v2.0.5 + Security + Publishing | Stable (Java 8-23) |
 | **v2.0.5** | `java-ci-universal.yml` | Maven + Gradle, Java 8-23 | Production (Maven/Gradle) |
@@ -201,7 +211,8 @@ This repository now supports multiple versions of Java CI workflows to meet diff
 
 ### **Key Features by Version**
 
-- **v3.0.0** 🔴: **BREAKING** - Java 11+, Auto-detection, Kubernetes, SBOM, Unified workflow
+- **v3.1.0** ⭐: Java 11-25 (all LTS), Auto-detection, Kubernetes, SBOM, Unified workflow
+- **v3.0.0**: Java 11-23, Auto-detection, Kubernetes, SBOM, Unified workflow
 - **v2.2.0**: All v2.1 + GraalVM native image, JMH benchmarks, Enhanced test reporting, Java 8-23
 - **v2.1.0**: All v2.0.5 + Security scanning, Artifact publishing, Enhanced Gradle, Java 23
 - **v2.0.5**: All v1.0.0 features + Gradle support, parallel execution, Java 8-23
@@ -222,16 +233,16 @@ This repository now supports multiple versions of Java CI workflows to meet diff
 
 ## 🚀 Quick Start
 
-### 1. **Java CI v3.0.0 (Latest - Auto-Detection, Cloud-Native)** ⭐ RECOMMENDED
+### 1. **Java CI v3.1.0 (Latest - Java 25 Support)** ⭐ RECOMMENDED
 
 ```yaml
-name: CI v3.0.0
+name: CI v3.1.0
 on: [push, pull_request]
 jobs:
   test:
-    uses: techishthoughts-org/java-workflows/.github/workflows/java-ci.yml@v3
+    uses: techishthoughts-org/java-workflows/.github/workflows/java-ci.yml@v3.1
     with:
-      java-version: '21'
+      java-version: '25'  # or 21, 17, 11
       # build-tool auto-detected from pom.xml or build.gradle!
       os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
       cache-dependencies: true
@@ -240,10 +251,11 @@ jobs:
 **Key Benefits:**
 - ✅ Auto-detection of Maven/Gradle
 - ✅ 50% less configuration
-- ✅ Modern Java focus (11, 17, 21, 23)
+- ✅ **All LTS versions: 11, 17, 21, 25**
+- ✅ Non-LTS: 23, 24
 - ⚠️ Requires Java 11+ (no Java 8)
 
-### 2. **Kubernetes Deployment v3.0.0** ⭐ NEW!
+### 2. **Kubernetes Deployment v3.1.0** ⭐ Cloud-Native
 
 ```yaml
 name: Deploy
@@ -252,7 +264,7 @@ on:
     types: [created]
 jobs:
   deploy:
-    uses: techishthoughts-org/java-workflows/.github/workflows/k8s-deploy.yml@v3
+    uses: techishthoughts-org/java-workflows/.github/workflows/k8s-deploy.yml@v3.1
     with:
       cluster-provider: 'eks'           # eks, gke, aks, custom
       cluster-name: 'production'

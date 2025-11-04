@@ -1,7 +1,8 @@
 # .github/workflows/k8s-deploy.yml
-# Purpose: Kubernetes deployment workflow v3.0.0 for cloud-native deployments
-# Version: 3.0.0
+# Purpose: Kubernetes deployment workflow v3.1.0 for cloud-native deployments
+# Version: 3.1.0
 # Supports: EKS (AWS), GKE (Google), AKS (Azure), self-hosted K8s
+# Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24, 25 (LTS)
 #
 # Inputs:
 #   cluster-provider: Kubernetes provider - 'eks', 'gke', 'aks', 'custom' (default: 'custom')
@@ -24,7 +25,7 @@
 #         deployment-name: 'myapp'
 #         image-name: 'myapp:v1.0.0'
 
-name: ☸️ Kubernetes Deployment v3.0.0
+name: ☸️ Kubernetes Deployment v3.1.0
 
 on:
   workflow_call:

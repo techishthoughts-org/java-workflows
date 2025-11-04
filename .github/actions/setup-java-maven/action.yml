@@ -1,5 +1,5 @@
 name: 'Setup Java & Maven'
-description: 'Sets up Java and Maven with caching'
+description: 'Sets up Java and Maven with caching. Supports Java 11-25 (all LTS versions)'
 inputs:
   java-version:
     description: 'Java version to use'

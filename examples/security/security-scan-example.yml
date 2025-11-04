@@ -1,0 +1,94 @@
+# Example: Comprehensive Security Scanning Workflow
+# This example shows how to use the ci-security.yml workflow
+# to scan your Java project for vulnerabilities
+
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run security scan daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security-scan:
+    name: 🔒 Security Analysis
+    uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
+    with:
+      # Java configuration
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      gradle-version: '8.5'  # Only needed for Gradle projects
+
+      # Security scanning tools
+      enable-codeql: true                    # SAST analysis
+      enable-dependency-check: true          # OWASP Dependency-Check
+      enable-trivy: true                     # Container and filesystem scanning
+      enable-snyk: true                      # Snyk (requires SNYK_TOKEN secret)
+
+      # Severity threshold
+      fail-on-severity: 'high'               # Options: critical, high, medium, low, none
+
+      # Notifications
+      notify-on-vulnerabilities: true        # Send Slack notifications
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Example: Use security-scan composite action directly in a job
+  quick-security-scan:
+    name: ⚡ Quick Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔒 Run Security Scan
+        uses: techishthoughts-org/workflows/.github/actions/security-scan@v2.1.0
+        with:
+          scan-type: 'all'              # dependency, secrets, or all
+          severity: 'HIGH'              # CRITICAL, HIGH, MEDIUM, LOW
+          fail-on-severity: 'CRITICAL'  # Fail build on CRITICAL vulnerabilities
+          output-format: 'sarif'        # sarif, json, table
+          upload-results: true          # Upload to GitHub Security tab
+
+      - name: 📊 View Security Results
+        if: always()
+        run: |
+          echo "Security scan completed!"
+          echo "Check the Security tab for detailed results"
+          echo "https://github.com/${{ github.repository }}/security/code-scanning"
+
+# Expected Outputs:
+# - security-score: Overall security score (A+ to F)
+# - total-vulnerabilities: Total number of vulnerabilities found
+# - critical-vulnerabilities: Number of critical vulnerabilities
+# - high-vulnerabilities: Number of high severity vulnerabilities
+# - scan-status: Overall scan status (pass/fail)
+
+# Security Scanning Features:
+# ✅ CodeQL SAST analysis for code vulnerabilities
+# ✅ OWASP Dependency-Check for known CVEs in dependencies
+# ✅ Trivy for filesystem and container vulnerabilities
+# ✅ Snyk for comprehensive dependency analysis (optional)
+# ✅ TruffleHog for secret detection
+# ✅ SARIF upload to GitHub Security tab
+# ✅ Security score calculation (A+ to F)
+# ✅ Configurable severity thresholds
+# ✅ Slack notifications on vulnerabilities
+
+# Best Practices:
+# 1. Run security scans on every PR and push to main
+# 2. Schedule daily scans to catch newly disclosed vulnerabilities
+# 3. Set fail-on-severity to 'high' or 'critical' for production branches
+# 4. Review security scan results in GitHub Security tab
+# 5. Use Dependabot to automatically create PRs for vulnerable dependencies
+# 6. Enable Snyk for advanced dependency analysis and remediation advice
+# 7. Configure Slack notifications to alert your security team
+# 8. Regularly update your dependencies to fix known vulnerabilities

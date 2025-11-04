@@ -1,0 +1,152 @@
+# Example: Complete Gradle CI Pipeline with Java 23
+# This example shows how to set up a comprehensive CI pipeline for Gradle projects
+
+name: Gradle CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Build and test with multiple Java versions
+  build-and-test:
+    name: 🔨 Build & Test
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
+    with:
+      java-version: '21'
+      build-tool: 'gradle'
+      gradle-version: '8.5'
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      coverage-tool: 'jacoco'
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Test with Java 23 (latest)
+  test-java-23:
+    name: 🧪 Test with Java 23
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🎯 Setup Java & Gradle
+        uses: techishthoughts-org/workflows/.github/actions/setup-java-gradle@v2.1.0
+        with:
+          java-version: '23'
+          java-distribution: 'temurin'
+          gradle-version: '8.5'
+          cache-dependencies: true
+
+      - name: 🔨 Build with Gradle
+        run: ./gradlew build --info
+
+      - name: 🧪 Run tests
+        run: ./gradlew test --info
+
+      - name: 📊 Generate test report
+        if: always()
+        run: ./gradlew testReport
+
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-java-23
+          path: build/reports/tests/
+
+  # Multi-version compatibility testing
+  compatibility-matrix:
+    name: 🔄 Compatibility Test (Java ${{ matrix.java-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: ['17', '21', '23']
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🎯 Setup Java ${{ matrix.java-version }} & Gradle
+        uses: techishthoughts-org/workflows/.github/actions/setup-java-gradle@v2.1.0
+        with:
+          java-version: ${{ matrix.java-version }}
+          java-distribution: 'temurin'
+          gradle-version: '8.5'
+          cache-dependencies: true
+
+      - name: 🔨 Build
+        run: ./gradlew clean build -x test
+
+      - name: 🧪 Test
+        run: ./gradlew test
+
+      - name: 📊 Coverage
+        run: ./gradlew jacocoTestReport
+
+  # Security scanning
+  security:
+    name: 🔒 Security Scan
+    needs: [build-and-test]
+    uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
+    with:
+      java-version: '21'
+      build-tool: 'gradle'
+      gradle-version: '8.5'
+      enable-codeql: true
+      enable-dependency-check: true
+      enable-trivy: true
+      fail-on-severity: 'high'
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+# build.gradle Configuration for JaCoCo:
+# plugins {
+#     id 'java'
+#     id 'jacoco'
+# }
+#
+# jacoco {
+#     toolVersion = "0.8.10"
+# }
+#
+# jacocoTestReport {
+#     reports {
+#         xml.required = true
+#         html.required = true
+#     }
+# }
+#
+# test {
+#     finalizedBy jacocoTestReport
+# }
+
+# gradle.properties for Gradle Wrapper:
+# distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+
+# Best Practices for Gradle Projects:
+# 1. Always use Gradle Wrapper (./gradlew) for consistent builds
+# 2. Pin Gradle version in gradle-wrapper.properties
+# 3. Use build cache for faster builds: --build-cache
+# 4. Enable parallel builds in gradle.properties: org.gradle.parallel=true
+# 5. Configure JVM heap size: org.gradle.jvmargs=-Xmx2g
+# 6. Use dependency verification for security
+# 7. Keep dependencies up to date with Dependabot
+# 8. Test with multiple Java versions for compatibility
+# 9. Use JaCoCo for code coverage reporting
+# 10. Run security scans on dependencies regularly
+
+# Gradle Optimization Tips:
+# - Use configuration cache: --configuration-cache
+# - Enable daemon: org.gradle.daemon=true (default)
+# - Use parallel execution: org.gradle.parallel=true
+# - Configure workers: org.gradle.workers.max=4
+# - Use build scan for insights: --scan
+
+# Testing Multiple Gradle Versions:
+# If you need to test with multiple Gradle versions, create a matrix:
+# strategy:
+#   matrix:
+#     gradle-version: ['8.4', '8.5', '8.6']
+# Then use: gradle-version: ${{ matrix.gradle-version }}

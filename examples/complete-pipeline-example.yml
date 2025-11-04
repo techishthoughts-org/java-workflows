@@ -1,0 +1,265 @@
+# Example: Complete Enterprise CI/CD Pipeline
+# This example demonstrates a full-featured pipeline with:
+# - Multi-version testing
+# - Security scanning
+# - Code quality checks
+# - Artifact publishing
+# - Release automation
+
+name: Complete Enterprise Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  # Stage 1: Build and Test
+  build-and-test:
+    name: 🔨 Build & Test
+    uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
+    with:
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      coverage-tool: 'jacoco'
+      test-pattern: '**/*Test'
+      maven-opts: '-Xmx4g'
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Stage 2: Security Scanning
+  security-scan:
+    name: 🔒 Security Analysis
+    needs: [build-and-test]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
+    with:
+      java-version: '21'
+      build-tool: 'maven'
+      enable-codeql: true
+      enable-dependency-check: true
+      enable-trivy: true
+      enable-snyk: true
+      fail-on-severity: 'high'
+      notify-on-vulnerabilities: true
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Stage 3: Compatibility Testing (Java LTS versions)
+  compatibility-test:
+    name: 🔄 Java ${{ matrix.java }} Compatibility
+    needs: [build-and-test]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['11', '17', '21', '23']
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 🔨 Build & Test
+        run: ./mvnw clean verify -B
+
+      - name: 📊 Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-java-${{ matrix.java }}
+          path: target/surefire-reports/
+
+  # Stage 4: Code Quality (SonarQube - Optional)
+  code-quality:
+    name: 📊 Code Quality
+    needs: [build-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 📊 SonarQube Analysis
+        if: env.SONAR_TOKEN != ''
+        run: |
+          ./mvnw verify sonar:sonar \
+            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }} \
+            -Dsonar.organization=${{ github.repository_owner }} \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Stage 5: Build Docker Image (if needed)
+  build-docker:
+    name: 🐳 Build Docker Image
+    needs: [build-and-test, security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 🔨 Build artifact
+        run: ./mvnw clean package -DskipTests -B
+
+      - name: 🐳 Build & Push Docker Image
+        uses: techishthoughts-org/workflows/.github/actions/docker-build-push@v2.1.0
+        with:
+          image-name: ${{ github.event.repository.name }}
+          image-tag: ${{ github.sha }}
+          registry: 'ghcr.io'
+          push: 'true'
+          platforms: 'linux/amd64,linux/arm64'
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+  # Stage 6: Publish Artifacts (on release)
+  publish-artifacts:
+    name: 📤 Publish Artifacts
+    needs: [build-and-test, security-scan]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📤 Publish to GitHub Packages
+        uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+        with:
+          build-tool: 'maven'
+          publish-target: 'github'
+          artifact-version: ${{ github.event.release.tag_name }}
+          java-version: '21'
+          skip-tests: false
+          gpg-sign: false
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📤 Publish to Maven Central (Optional)
+        if: env.OSSRH_USERNAME != ''
+        uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+        with:
+          build-tool: 'maven'
+          publish-target: 'maven-central'
+          artifact-version: ${{ github.event.release.tag_name }}
+          java-version: '21'
+          skip-tests: true  # Already tested
+          gpg-sign: true
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  # Stage 7: Release Summary
+  release-summary:
+    name: 📋 Release Summary
+    needs: [publish-artifacts]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📋 Generate Summary
+        run: |
+          echo "### 🚀 Release ${{ github.event.release.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### ✅ Completed Stages:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build & Test (Multi-OS)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security Scanning" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Artifact Publishing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 Published Artifacts:" >> $GITHUB_STEP_SUMMARY
+          echo "- GitHub Packages: https://github.com/${{ github.repository }}/packages" >> $GITHUB_STEP_SUMMARY
+          echo "- Maven Central: https://search.maven.org/ (check after sync)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📊 Quality Metrics:" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Score: Check Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Coverage: Check artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Quality: Check SonarCloud" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🔔 Notify Success
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🚀 Release ${{ github.event.release.tag_name }} published successfully!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Release ${{ github.event.release.tag_name }}*\n\n✅ All stages completed\n📦 Artifacts published\n🔒 Security checks passed"
+                  }
+                }
+              ]
+            }'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+# Required Secrets:
+# - SLACK_WEBHOOK_URL: For notifications (optional)
+# - SNYK_TOKEN: For Snyk scanning (optional)
+# - SONAR_TOKEN: For SonarQube analysis (optional)
+# - OSSRH_USERNAME: For Maven Central (optional)
+# - OSSRH_PASSWORD: For Maven Central (optional)
+# - GPG_PRIVATE_KEY: For Maven Central signing (optional)
+# - GPG_PASSPHRASE: For GPG signing (optional)
+
+# Pipeline Stages:
+# 1. Build & Test: Multi-OS testing with coverage
+# 2. Security Scan: SAST, SCA, secrets detection
+# 3. Compatibility Test: Test with multiple Java versions
+# 4. Code Quality: SonarQube analysis (optional)
+# 5. Docker Build: Container image creation
+# 6. Publish Artifacts: Release to package repositories
+# 7. Release Summary: Final reporting and notifications
+
+# Best Practices:
+# 1. Always run security scans before publishing
+# 2. Test with all LTS Java versions for compatibility
+# 3. Use semantic versioning for releases
+# 4. Publish to GitHub Packages first, then Maven Central
+# 5. Run full test suite before releasing
+# 6. Use GitHub Environments for production deployments
+# 7. Enable required status checks on main branch
+# 8. Use Dependabot for dependency updates
+# 9. Monitor security advisories regularly
+# 10. Keep workflows and actions up to date

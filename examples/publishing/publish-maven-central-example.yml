@@ -1,0 +1,117 @@
+# Example: Publishing to Maven Central (OSSRH)
+# This example shows how to publish your Java artifacts to Maven Central
+
+name: Publish to Maven Central
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+        type: string
+      dry-run:
+        description: 'Perform a dry run without publishing'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish-maven-central:
+    name: 📤 Publish to Maven Central
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📤 Publish to Maven Central
+        uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+        with:
+          build-tool: 'maven'
+          publish-target: 'maven-central'
+          artifact-version: ${{ github.event.release.tag_name || inputs.version }}
+          java-version: '21'
+          skip-tests: false
+          gpg-sign: true  # REQUIRED for Maven Central
+          dry-run: ${{ inputs.dry-run || false }}
+        env:
+          # Maven Central (OSSRH) credentials
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+
+          # GPG signing credentials (REQUIRED for Maven Central)
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: 📊 Publish Summary
+        if: always()
+        run: |
+          echo "### 📤 Maven Central Publishing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ github.event.release.tag_name || inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** Maven Central (OSSRH)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Artifact URL:** https://search.maven.org/artifact/YOUR_GROUP_ID/YOUR_ARTIFACT_ID/${{ github.event.release.tag_name || inputs.version }}/jar" >> $GITHUB_STEP_SUMMARY
+
+# Required Secrets for Maven Central:
+# 1. OSSRH_USERNAME: Your Sonatype OSSRH username
+# 2. OSSRH_PASSWORD: Your Sonatype OSSRH password
+# 3. GPG_PRIVATE_KEY: Your GPG private key (base64 encoded)
+#    Generate: gpg --armor --export-secret-keys YOUR_KEY_ID | base64
+# 4. GPG_PASSPHRASE: Your GPG key passphrase
+
+# Prerequisites:
+# 1. Register for Sonatype OSSRH account: https://issues.sonatype.org/
+# 2. Generate GPG key pair: gpg --gen-key
+# 3. Upload public key to key servers:
+#    gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID
+# 4. Configure pom.xml with required Maven Central metadata:
+#    - groupId, artifactId, version
+#    - name, description, url
+#    - licenses, developers, scm
+#    - distributionManagement for OSSRH
+#    - maven-gpg-plugin for signing
+# 5. Add secrets to GitHub repository settings
+
+# pom.xml Configuration Example:
+# <distributionManagement>
+#   <repository>
+#     <id>ossrh</id>
+#     <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+#   </repository>
+# </distributionManagement>
+#
+# <build>
+#   <plugins>
+#     <plugin>
+#       <groupId>org.apache.maven.plugins</groupId>
+#       <artifactId>maven-gpg-plugin</artifactId>
+#       <version>3.1.0</version>
+#       <executions>
+#         <execution>
+#           <id>sign-artifacts</id>
+#           <phase>verify</phase>
+#           <goals>
+#             <goal>sign</goal>
+#           </goals>
+#         </execution>
+#       </executions>
+#     </plugin>
+#   </plugins>
+# </build>
+
+# Best Practices:
+# 1. Always test with dry-run: true first
+# 2. Use semantic versioning (e.g., 1.0.0, 1.1.0, 2.0.0)
+# 3. Publish only on tagged releases, never on commits
+# 4. Keep GPG keys secure and rotate them regularly
+# 5. Use GitHub Environments for production deployments
+# 6. Verify artifacts in Maven Central after publishing
+# 7. Update CHANGELOG.md before releasing
+# 8. Test artifacts locally before publishing

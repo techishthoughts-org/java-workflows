@@ -1,0 +1,114 @@
+# Example: Publishing to GitHub Packages
+# This example shows how to publish your Java artifacts to GitHub Packages
+
+name: Publish to GitHub Packages
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+        type: string
+
+jobs:
+  publish-github-packages:
+    name: 📤 Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📤 Publish to GitHub Packages
+        uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+        with:
+          build-tool: 'maven'  # or 'gradle'
+          publish-target: 'github'
+          artifact-version: ${{ github.event.release.tag_name || inputs.version }}
+          java-version: '21'
+          skip-tests: false
+          gpg-sign: false  # Not required for GitHub Packages
+          dry-run: false
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Publish Summary
+        if: success()
+        run: |
+          echo "### 📤 GitHub Packages Publishing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ github.event.release.tag_name || inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** GitHub Packages" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Packages URL:** https://github.com/${{ github.repository }}/packages" >> $GITHUB_STEP_SUMMARY
+
+# No additional secrets required! Uses built-in GITHUB_TOKEN
+
+# pom.xml Configuration for GitHub Packages:
+# <distributionManagement>
+#   <repository>
+#     <id>github</id>
+#     <name>GitHub Packages</name>
+#     <url>https://maven.pkg.github.com/YOUR_USERNAME/YOUR_REPO</url>
+#   </repository>
+# </distributionManagement>
+
+# build.gradle Configuration for GitHub Packages:
+# publishing {
+#   repositories {
+#     maven {
+#       name = "GitHubPackages"
+#       url = uri("https://maven.pkg.github.com/YOUR_USERNAME/YOUR_REPO")
+#       credentials {
+#         username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+#         password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+#       }
+#     }
+#   }
+#   publications {
+#     gpr(MavenPublication) {
+#       from(components.java)
+#     }
+#   }
+# }
+
+# Consuming Packages:
+# Users need to authenticate to download from GitHub Packages.
+# Add to their settings.xml (Maven) or build.gradle (Gradle):
+#
+# Maven settings.xml:
+# <servers>
+#   <server>
+#     <id>github</id>
+#     <username>USERNAME</username>
+#     <password>PERSONAL_ACCESS_TOKEN</password>
+#   </server>
+# </servers>
+#
+# Gradle:
+# repositories {
+#   maven {
+#     url = uri("https://maven.pkg.github.com/YOUR_USERNAME/YOUR_REPO")
+#     credentials {
+#       username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+#       password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+#     }
+#   }
+# }
+
+# Best Practices:
+# 1. Use GitHub Packages for private/internal artifacts
+# 2. Use Maven Central for public open-source projects
+# 3. Publish only on tagged releases
+# 4. Use semantic versioning
+# 5. Test artifacts before publishing
+# 6. Document how consumers should authenticate
+# 7. Consider package retention policies
+# 8. Use GitHub Environments for deployment protection

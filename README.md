@@ -20,6 +20,9 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 
 3. **🔧 Composite Actions**
    - `setup-java-maven`: Reusable Java/Maven setup
+   - `setup-java-gradle`: Reusable Java/Gradle setup with wrapper support (NEW!)
+   - `security-scan`: Comprehensive security scanning (Trivy, OWASP, secrets) (NEW!)
+   - `artifact-publish`: Publish to multiple repositories (GitHub, Maven Central, Nexus, etc.) (NEW!)
    - `docker-build-push`: Reusable Docker operations
    - Eliminates code duplication across workflows
 
@@ -62,7 +65,8 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 .github/
 ├── workflows/
 │   ├── java-ci-secure.yml                    # 🧪 Secure Java CI v1.0.0 (Maven only)
-│   ├── java-ci-universal.yml                 # 🧪 Enhanced Java CI v2.0.0 (Maven + Gradle)
+│   ├── java-ci-universal.yml                 # 🧪 Enhanced Java CI v2.1.0 (Maven + Gradle)
+│   ├── ci-security.yml                       # 🔒 Security Scanning v1.0.0 (NEW!)
 │   ├── auto-tag-enhanced.yml                 # 🏷️ Enhanced auto-tagging and releases
 │   ├── auto-delete-branch-enhanced.yml       # 🗑️ Enhanced branch cleanup
 │   ├── dependabot-auto-merge-enhanced.yml    # 🤖 Enhanced Dependabot automation
@@ -71,6 +75,12 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 └── actions/
     ├── setup-java-maven/
     │   └── action.yml                         # ☕ Java & Maven setup composite action
+    ├── setup-java-gradle/                     # 🎯 Java & Gradle setup composite action (NEW!)
+    │   └── action.yml
+    ├── security-scan/                         # 🔒 Security scanning composite action (NEW!)
+    │   └── action.yml
+    ├── artifact-publish/                      # 📤 Artifact publishing composite action (NEW!)
+    │   └── action.yml
     └── docker-build-push/
         └── action.yml                         # 🐳 Docker build & push composite action
 ```
@@ -83,6 +93,50 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 - **Impact**: This was preventing the workflows from being discoverable by GitHub Actions
 - **Status**: ✅ **RESOLVED** - Workflows are now in the correct location
 
+## 🎉 What's New in v2.1.0
+
+### ☕ Java 23 Support
+- ✅ Added Java 23 (latest non-LTS) to all workflows
+- ✅ Full LTS support: Java 11, 17, 21
+- ✅ Current versions: Java 22, 23
+- ⚠️ Java 8 will be deprecated in v3.0.0
+
+### 🔒 Comprehensive Security Scanning (NEW!)
+New `ci-security.yml` workflow provides:
+- **SAST**: CodeQL static analysis
+- **SCA**: OWASP Dependency-Check, Trivy, Snyk (optional)
+- **Secrets**: TruffleHog secret scanning
+- **Scoring**: A+ to F security rating
+- **Configurable**: Fail on severity thresholds (critical, high, medium, low)
+
+### 🎯 Enhanced Gradle Support (NEW!)
+New `setup-java-gradle` composite action:
+- Gradle wrapper auto-detection
+- Dependency caching for faster builds
+- Multiple Java distributions (Temurin, Zulu, Liberica, Corretto, Microsoft, Oracle)
+- Configurable Gradle versions
+
+### 📤 Artifact Publishing (NEW!)
+New `artifact-publish` composite action supports:
+- **GitHub Packages** (built-in GitHub integration)
+- **Maven Central** (OSSRH with GPG signing)
+- **Sonatype Nexus** (enterprise repository)
+- **JFrog Artifactory** (DevOps platform)
+- **AWS CodeArtifact** (AWS-native artifact management)
+- Dry-run mode for testing
+
+### 🛡️ Security Scan Composite Action (NEW!)
+Quick security scanning in any workflow:
+- Trivy vulnerability scanner
+- Secret detection with TruffleHog
+- Automatic SARIF upload to GitHub Security
+- Configurable severity thresholds
+
+### 📝 CHANGELOG.md
+- Comprehensive changelog following [Keep a Changelog](https://keepachangelog.com/)
+- Version history and upgrade guides
+- Future roadmap transparency
+
 ## 📋 Versioning Strategy
 
 ### **Multiple Workflow Versions Available**
@@ -91,15 +145,17 @@ This repository now supports multiple versions of Java CI workflows to meet diff
 
 | Version | File | Features | Use Case |
 |---------|------|----------|----------|
-| **v1.0.0** | `java-ci-secure.yml` | Maven only, stable | Production projects |
-| **v2.0.0** | `java-ci-universal.yml` | Maven + Gradle, enhanced | Advanced projects |
-| **Latest** | `java-ci-universal.yml` | Latest features | Development/testing |
+| **v1.0.0** | `java-ci-secure.yml` | Maven only, stable, Java 8-23 | Production (Maven) |
+| **v2.0.5** | `java-ci-universal.yml` | Maven + Gradle, Java 8-23 | Production (Maven/Gradle) |
+| **v2.1.0** | `java-ci-universal.yml` | All v2.0.5 + Security + Publishing | Latest stable |
+| **@main** | All workflows | Bleeding edge features | Development/testing |
 
 ### **Key Features by Version**
 
-- **v1.0.0**: Basic Java CI with Maven support, matrix testing, coverage
-- **v2.0.0**: All v1.0.0 features + Gradle support, parallel execution, timing
-- **Latest**: All v2.0.0 features + enhanced error handling, better logging
+- **v1.0.0**: Basic Java CI with Maven support, matrix testing, coverage, Java 8-23
+- **v2.0.5**: All v1.0.0 features + Gradle support, parallel execution, Java 8-23
+- **v2.1.0**: All v2.0.5 + Security scanning, Artifact publishing, Enhanced Gradle, Java 23
+- **@main**: Latest unreleased features (use with caution)
 
 ### **Migration Path**
 - **v1.0.0 → v2.0.0**: No breaking changes, just add new features
@@ -212,6 +268,55 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### 7. **🔒 Security Scanning (NEW!)**
+
+```yaml
+name: Security
+on: [push, pull_request]
+jobs:
+  security:
+    uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
+    with:
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      enable-codeql: true
+      enable-dependency-check: true
+      enable-trivy: true
+      enable-snyk: false  # Set to true if you have SNYK_TOKEN
+      fail-on-severity: 'high'
+      notify-on-vulnerabilities: true
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}  # Optional
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+### 8. **📤 Artifact Publishing (NEW!)**
+
+```yaml
+name: Publish
+on:
+  release:
+    types: [created]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+        with:
+          build-tool: 'maven'
+          publish-target: 'github'  # github, maven-central, nexus, artifactory, aws-codeartifact
+          artifact-version: ${{ github.event.release.tag_name }}
+          java-version: '21'
+          skip-tests: false
+          gpg-sign: true  # Required for Maven Central
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+```
+
 ## 🔧 Composite Actions Usage
 
 ### Java & Maven Setup
@@ -222,7 +327,52 @@ steps:
   - uses: techishthoughts-org/workflows/.github/actions/setup-java-maven@v1.0.0
     with:
       java-version: '21'
-      maven-opts: '-Xmx4g'
+      maven-version: '3.9.5'
+```
+
+### Java & Gradle Setup (NEW!)
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: techishthoughts-org/workflows/.github/actions/setup-java-gradle@v2.1.0
+    with:
+      java-version: '21'
+      java-distribution: 'temurin'  # temurin, zulu, liberica, corretto
+      gradle-version: '8.5'
+      cache-dependencies: true
+```
+
+### Security Scan (NEW!)
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: techishthoughts-org/workflows/.github/actions/security-scan@v2.1.0
+    with:
+      scan-type: 'all'  # dependency, secrets, or all
+      severity: 'HIGH'
+      fail-on-severity: 'CRITICAL'
+      output-format: 'sarif'
+      upload-results: true
+```
+
+### Artifact Publishing (NEW!)
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: techishthoughts-org/workflows/.github/actions/artifact-publish@v2.1.0
+    with:
+      build-tool: 'maven'
+      publish-target: 'nexus'
+      artifact-version: '1.0.0'
+      repository-url: 'https://nexus.example.com/repository/releases'
+      repository-id: 'releases'
+      dry-run: false
+    env:
+      NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+      NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 ```
 
 ### Docker Build & Push

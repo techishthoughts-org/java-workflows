@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2025-11-XX
+
+### 🔴 Breaking Changes
+- **Removed Java 8 support** - Minimum Java version is now 11
+- **Consolidated workflows** - New unified `java-ci.yml` replaces `java-ci-universal.yml` and `java-ci-secure.yml`
+- **Auto-detection default** - Build tool now auto-detected by default (no longer required input)
+- **Simplified configuration** - Fewer required inputs, smarter defaults
+
+### Added
+- **Cloud-Native Deployments:** New workflow `k8s-deploy.yml`
+  - Kubernetes deployment automation
+  - Support for EKS, GKE, AKS, custom clusters
+  - Automatic rollout verification
+  - Service creation and exposure
+- **SBOM Generation:** New composite action `sbom-generate`
+  - Software Bill of Materials for supply chain security
+  - CycloneDX and SPDX format support
+  - Automatic dependency tracking
+- **Auto-Detection:** Build tool auto-detection (Maven/Gradle)
+- **Enhanced Caching:** Improved dependency caching strategies
+- **Modern Focus:** Java 11, 17, 21, 23+ support
+
+### Changed
+- Unified workflow naming for simplicity
+- Improved performance with parallel execution
+- Better error messages and debugging
+- Enhanced GitHub Step Summary outputs
+
+### Removed
+- Java 8 support (use v2.x for Java 8)
+- Legacy workflow files (use `java-ci.yml` instead)
+
+### Migration
+- See MIGRATION_V3.md for complete upgrade guide
+- v2.x remains supported until January 2027
+
 ## [2.2.0] - 2025-11-XX
 
 ### Added

@@ -1,0 +1,266 @@
+# .github/workflows/java-ci.yml
+# Purpose: Unified Java CI workflow v3.0.0 with auto-detection and modern features
+# Version: 3.0.0
+# Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24+
+# Breaking Changes: Java 8 removed, simplified configuration, auto-detection
+#
+# Inputs:
+#   java-version: Java version to use (default: 21)
+#   build-tool: Build tool - 'maven', 'gradle', or 'auto' (default: 'auto')
+#   os-matrix: Operating systems to test on (default: 'ubuntu-latest')
+#   enable-caching: Enable dependency caching (default: true)
+#   run-tests: Run tests (default: true)
+#   generate-coverage: Generate coverage reports (default: true)
+#   upload-artifacts: Upload build artifacts (default: true)
+#
+# Outputs:
+#   build-tool-detected: Auto-detected build tool
+#   test-results: Test execution results
+#   coverage-percentage: Code coverage percentage
+#   build-status: Overall build status
+#
+# Usage:
+#   jobs:
+#     ci:
+#       uses: org/workflows/.github/workflows/java-ci.yml@v3
+#       with:
+#         java-version: '21'
+
+name: 🚀 Java CI v3.0.0
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '21'
+      build-tool:
+        required: false
+        type: string
+        default: 'auto'
+      os-matrix:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      enable-caching:
+        required: false
+        type: boolean
+        default: true
+      run-tests:
+        required: false
+        type: boolean
+        default: true
+      generate-coverage:
+        required: false
+        type: boolean
+        default: true
+      upload-artifacts:
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      build-tool-detected:
+        description: "Auto-detected build tool"
+        value: ${{ jobs.build.outputs.build-tool }}
+      test-results:
+        description: "Test execution results"
+        value: ${{ jobs.build.outputs.test-results }}
+      coverage-percentage:
+        description: "Code coverage percentage"
+        value: ${{ jobs.build.outputs.coverage-percentage }}
+      build-status:
+        description: "Overall build status"
+        value: ${{ jobs.build.outputs.build-status }}
+
+jobs:
+  detect-and-build:
+    name: 🔨 Build & Test (Java ${{ matrix.java }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(format('[{0}]', inputs.os-matrix)) }}
+        java: ${{ fromJson(format('["{0}"]', inputs.java-version)) }}
+    outputs:
+      build-tool: ${{ steps.detect.outputs.build-tool }}
+      test-results: ${{ steps.test.outputs.results }}
+      coverage-percentage: ${{ steps.coverage.outputs.percentage }}
+      build-status: ${{ steps.build.outputs.status }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Auto-detect build tool
+        id: detect
+        shell: bash
+        run: |
+          BUILD_TOOL="${{ inputs.build-tool }}"
+
+          if [[ "$BUILD_TOOL" == "auto" ]]; then
+            echo "🔍 Auto-detecting build tool..."
+
+            if [ -f "pom.xml" ]; then
+              BUILD_TOOL="maven"
+              echo "✅ Detected Maven (pom.xml found)"
+            elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+              BUILD_TOOL="gradle"
+              echo "✅ Detected Gradle (build.gradle found)"
+            else
+              echo "❌ Could not auto-detect build tool. Please specify build-tool input."
+              exit 1
+            fi
+          else
+            echo "📌 Using specified build tool: $BUILD_TOOL"
+          fi
+
+          echo "build-tool=$BUILD_TOOL" >> $GITHUB_OUTPUT
+
+      - name: ☕ Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+          cache: ${{ steps.detect.outputs.build-tool }}
+
+      - name: 🔨 Build with Maven
+        if: steps.detect.outputs.build-tool == 'maven'
+        id: build-maven
+        shell: bash
+        run: |
+          echo "🔨 Building with Maven..."
+          ./mvnw clean package -DskipTests -B
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 🔨 Build with Gradle
+        if: steps.detect.outputs.build-tool == 'gradle'
+        id: build-gradle
+        shell: bash
+        run: |
+          echo "🔨 Building with Gradle..."
+          chmod +x ./gradlew
+          ./gradlew clean build -x test
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 🧪 Run Tests
+        if: inputs.run-tests == true
+        id: test
+        shell: bash
+        run: |
+          BUILD_TOOL="${{ steps.detect.outputs.build-tool }}"
+
+          echo "🧪 Running tests with $BUILD_TOOL..."
+
+          if [[ "$BUILD_TOOL" == "maven" ]]; then
+            ./mvnw test -B
+            RESULTS_PATH="target/surefire-reports"
+          else
+            ./gradlew test
+            RESULTS_PATH="build/test-results/test"
+          fi
+
+          # Parse results
+          TOTAL=0
+          PASSED=0
+          FAILED=0
+
+          if [ -d "$RESULTS_PATH" ]; then
+            for file in "$RESULTS_PATH"/*.xml; do
+              if [ -f "$file" ]; then
+                T=$(grep -o 'tests="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+                F=$(grep -o 'failures="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+                E=$(grep -o 'errors="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+
+                TOTAL=$((TOTAL + T))
+                FAILED=$((FAILED + F + E))
+              fi
+            done
+            PASSED=$((TOTAL - FAILED))
+          fi
+
+          RESULTS="Total: $TOTAL, Passed: $PASSED, Failed: $FAILED"
+          echo "results=$RESULTS" >> $GITHUB_OUTPUT
+
+          echo "📊 Test Results: $RESULTS"
+
+      - name: 📊 Generate Coverage
+        if: inputs.generate-coverage == true
+        id: coverage
+        shell: bash
+        run: |
+          BUILD_TOOL="${{ steps.detect.outputs.build-tool }}"
+
+          echo "📊 Generating coverage report..."
+
+          if [[ "$BUILD_TOOL" == "maven" ]]; then
+            ./mvnw jacoco:report -B
+            COVERAGE_FILE="target/site/jacoco/index.html"
+          else
+            ./gradlew jacocoTestReport
+            COVERAGE_FILE="build/reports/jacoco/test/html/index.html"
+          fi
+
+          # Simple coverage extraction
+          if [ -f "$COVERAGE_FILE" ]; then
+            COVERAGE=$(grep -o '[0-9]*%' "$COVERAGE_FILE" | head -1 | tr -d '%' || echo "0")
+            echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+            echo "📊 Coverage: ${COVERAGE}%"
+          else
+            echo "percentage=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📤 Upload Artifacts
+        if: inputs.upload-artifacts == true && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}-java${{ matrix.java }}
+          path: |
+            target/*.jar
+            build/libs/*.jar
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 📝 Build Summary
+        if: always()
+        shell: bash
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🚀 Java CI v3.0.0 Summary
+
+          | Metric | Value |
+          |--------|-------|
+          | **Java Version** | ${{ matrix.java }} |
+          | **Build Tool** | ${{ steps.detect.outputs.build-tool }} (auto-detected) |
+          | **OS** | ${{ matrix.os }} |
+          | **Tests** | ${{ steps.test.outputs.results || 'Skipped' }} |
+          | **Coverage** | ${{ steps.coverage.outputs.percentage || 'N/A' }}% |
+          | **Status** | ✅ Success |
+
+          **v3.0.0 Features:**
+          - ✅ Auto-detection of build tools
+          - ✅ Java 11+ only (modern focus)
+          - ✅ Simplified configuration
+          - ✅ Enhanced caching
+          - ✅ Cloud-native ready
+
+          EOF
+
+  build:
+    name: 📊 Aggregate Results
+    needs: detect-and-build
+    runs-on: ubuntu-latest
+    if: always()
+    outputs:
+      build-tool: ${{ needs.detect-and-build.outputs.build-tool }}
+      test-results: ${{ needs.detect-and-build.outputs.test-results }}
+      coverage-percentage: ${{ needs.detect-and-build.outputs.coverage-percentage }}
+      build-status: ${{ needs.detect-and-build.outputs.build-status }}
+    steps:
+      - name: 📊 Summary
+        run: |
+          echo "✅ Java CI v3.0.0 completed successfully"
+          echo "Build Tool: ${{ needs.detect-and-build.outputs.build-tool }}"

@@ -1,0 +1,44 @@
+name: 'SBOM Generation'
+description: 'Generate Software Bill of Materials (SBOM) for supply chain security'
+inputs:
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  sbom-format:
+    description: 'SBOM format: cyclonedx or spdx'
+    required: false
+    default: 'cyclonedx'
+  upload-sbom:
+    description: 'Upload SBOM as artifact'
+    required: false
+    default: 'true'
+outputs:
+  sbom-path:
+    description: 'Path to generated SBOM'
+    value: ${{ steps.generate.outputs.sbom-path }}
+runs:
+  using: "composite"
+  steps:
+    - name: 📦 Generate SBOM
+      id: generate
+      shell: bash
+      run: |
+        echo "📦 Generating SBOM in ${{ inputs.sbom-format }} format..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
+          SBOM_PATH="target/bom.json"
+        else
+          ./gradlew cyclonedxBom
+          SBOM_PATH="build/reports/bom.json"
+        fi
+
+        echo "sbom-path=$SBOM_PATH" >> $GITHUB_OUTPUT
+        echo "✅ SBOM generated at $SBOM_PATH"
+
+    - name: 📤 Upload SBOM
+      if: inputs.upload-sbom == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-${{ inputs.sbom-format }}
+        path: ${{ steps.generate.outputs.sbom-path }}

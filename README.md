@@ -2,6 +2,43 @@
 
 This repository contains a comprehensive set of production-ready, reusable GitHub Actions workflows for Java projects with all the missing enterprise features implemented.
 
+## 🎉 **What's New in v3.0.0** 🔴 BREAKING CHANGES
+
+### 🔴 Breaking Changes
+
+- **Java 8 Removed**: Minimum Java version is now **11**
+- **Unified Workflow**: New `java-ci.yml` replaces `java-ci-universal.yml` and `java-ci-secure.yml`
+- **Auto-Detection**: Build tool now auto-detected (no longer required input)
+- **Simplified Configuration**: 50% fewer required inputs
+
+### ✨ New Features
+
+- **☸️ Kubernetes Deployment**: Deploy to EKS, GKE, AKS, or custom clusters
+- **📦 SBOM Generation**: Software Bill of Materials for supply chain security
+- **🚀 Cloud-Native Focus**: Enhanced for modern cloud deployments
+- **🎯 Smart Defaults**: Auto-detection of build tools and configurations
+
+### 📖 Migration
+
+**Quick Migration (5 minutes):**
+```yaml
+# Before (v2.x)
+uses: techishthoughts-org/java-workflows/.github/workflows/java-ci-universal.yml@v2
+with:
+  java-version: '21'
+  build-tool: 'maven'
+
+# After (v3.0.0)
+uses: techishthoughts-org/java-workflows/.github/workflows/java-ci.yml@v3
+with:
+  java-version: '21'
+  # build-tool auto-detected!
+```
+
+📖 **See [MIGRATION_V3.md](MIGRATION_V3.md) for complete migration guide**
+
+**v2.x Support:** Maintained until January 2027 (security patches only)
+
 ## 📋 What Was Implemented
 
 ### ✅ **All Missing Parts Added:**
@@ -64,9 +101,11 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 ```
 .github/
 ├── workflows/
+│   ├── java-ci.yml                           # 🚀 Unified Java CI v3.0.0 (Maven + Gradle, Auto-detect) ⭐ NEW!
+│   ├── k8s-deploy.yml                        # ☸️ Kubernetes Deployment v3.0.0 ⭐ NEW!
 │   ├── java-ci-secure.yml                    # 🧪 Secure Java CI v1.0.0 (Maven only)
 │   ├── java-ci-universal.yml                 # 🧪 Enhanced Java CI v2.1.0 (Maven + Gradle)
-│   ├── ci-security.yml                       # 🔒 Security Scanning v1.0.0 (NEW!)
+│   ├── ci-security.yml                       # 🔒 Security Scanning v2.1.0
 │   ├── auto-tag-enhanced.yml                 # 🏷️ Enhanced auto-tagging and releases
 │   ├── auto-delete-branch-enhanced.yml       # 🗑️ Enhanced branch cleanup
 │   ├── dependabot-auto-merge-enhanced.yml    # 🤖 Enhanced Dependabot automation
@@ -75,11 +114,19 @@ This repository contains a comprehensive set of production-ready, reusable GitHu
 └── actions/
     ├── setup-java-maven/
     │   └── action.yml                         # ☕ Java & Maven setup composite action
-    ├── setup-java-gradle/                     # 🎯 Java & Gradle setup composite action (NEW!)
+    ├── setup-java-gradle/                     # 🎯 Java & Gradle setup composite action
     │   └── action.yml
-    ├── security-scan/                         # 🔒 Security scanning composite action (NEW!)
+    ├── security-scan/                         # 🔒 Security scanning composite action
     │   └── action.yml
-    ├── artifact-publish/                      # 📤 Artifact publishing composite action (NEW!)
+    ├── artifact-publish/                      # 📤 Artifact publishing composite action
+    │   └── action.yml
+    ├── sbom-generate/                         # 📦 SBOM generation composite action ⭐ NEW!
+    │   └── action.yml
+    ├── native-image-build/                    # 🔥 GraalVM native image build (v2.2.0)
+    │   └── action.yml
+    ├── jmh-benchmark/                         # ⚡ JMH performance benchmarking (v2.2.0)
+    │   └── action.yml
+    ├── test-report/                           # 📊 Enhanced test reporting (v2.2.0)
     │   └── action.yml
     └── docker-build-push/
         └── action.yml                         # 🐳 Docker build & push composite action
@@ -145,27 +192,102 @@ This repository now supports multiple versions of Java CI workflows to meet diff
 
 | Version | File | Features | Use Case |
 |---------|------|----------|----------|
-| **v1.0.0** | `java-ci-secure.yml` | Maven only, stable, Java 8-23 | Production (Maven) |
+| **v3.0.0** 🔴 | `java-ci.yml` | Java 11+, Auto-detect, K8s, SBOM | **Latest (Breaking)** |
+| **v2.2.0** | `java-ci-universal.yml` | All v2.1 + Native Image, JMH, Test Reports | Stable (Java 8-23) |
+| **v2.1.0** | `java-ci-universal.yml` | All v2.0.5 + Security + Publishing | Stable (Java 8-23) |
 | **v2.0.5** | `java-ci-universal.yml` | Maven + Gradle, Java 8-23 | Production (Maven/Gradle) |
-| **v2.1.0** | `java-ci-universal.yml` | All v2.0.5 + Security + Publishing | Latest stable |
+| **v1.0.0** | `java-ci-secure.yml` | Maven only, stable, Java 8-23 | Legacy (Maven only) |
 | **@main** | All workflows | Bleeding edge features | Development/testing |
 
 ### **Key Features by Version**
 
-- **v1.0.0**: Basic Java CI with Maven support, matrix testing, coverage, Java 8-23
-- **v2.0.5**: All v1.0.0 features + Gradle support, parallel execution, Java 8-23
+- **v3.0.0** 🔴: **BREAKING** - Java 11+, Auto-detection, Kubernetes, SBOM, Unified workflow
+- **v2.2.0**: All v2.1 + GraalVM native image, JMH benchmarks, Enhanced test reporting, Java 8-23
 - **v2.1.0**: All v2.0.5 + Security scanning, Artifact publishing, Enhanced Gradle, Java 23
+- **v2.0.5**: All v1.0.0 features + Gradle support, parallel execution, Java 8-23
+- **v1.0.0**: Basic Java CI with Maven support, matrix testing, coverage, Java 8-23
 - **@main**: Latest unreleased features (use with caution)
 
 ### **Migration Path**
+- **v2.x → v3.0.0**: 🔴 **BREAKING CHANGES** - See [MIGRATION_V3.md](MIGRATION_V3.md)
 - **v1.0.0 → v2.0.0**: No breaking changes, just add new features
-- **v2.0.0 → Latest**: No breaking changes, enhanced performance
+- **v2.0.0 → v2.2.0**: No breaking changes, enhanced performance
 
-📖 **See [VERSIONING.md](VERSIONING.md) for detailed versioning strategy**
+### **Support Timeline**
+- **v3.x**: Current stable (Java 11+)
+- **v2.x**: Supported until **January 2027** (security patches only)
+- **v1.x**: Supported until **January 2027** (security patches only)
+
+📖 **See [VERSIONING_STRATEGY.md](VERSIONING_STRATEGY.md) for detailed versioning strategy**
 
 ## 🚀 Quick Start
 
-### 1. **Java CI v1.0.0 (Stable Foundation - Maven Only)**
+### 1. **Java CI v3.0.0 (Latest - Auto-Detection, Cloud-Native)** ⭐ RECOMMENDED
+
+```yaml
+name: CI v3.0.0
+on: [push, pull_request]
+jobs:
+  test:
+    uses: techishthoughts-org/java-workflows/.github/workflows/java-ci.yml@v3
+    with:
+      java-version: '21'
+      # build-tool auto-detected from pom.xml or build.gradle!
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      cache-dependencies: true
+```
+
+**Key Benefits:**
+- ✅ Auto-detection of Maven/Gradle
+- ✅ 50% less configuration
+- ✅ Modern Java focus (11, 17, 21, 23)
+- ⚠️ Requires Java 11+ (no Java 8)
+
+### 2. **Kubernetes Deployment v3.0.0** ⭐ NEW!
+
+```yaml
+name: Deploy
+on:
+  release:
+    types: [created]
+jobs:
+  deploy:
+    uses: techishthoughts-org/java-workflows/.github/workflows/k8s-deploy.yml@v3
+    with:
+      cluster-provider: 'eks'           # eks, gke, aks, custom
+      cluster-name: 'production'
+      namespace: 'myapp'
+      deployment-name: 'myapp'
+      image-name: 'ghcr.io/myorg/myapp:${{ github.event.release.tag_name }}'
+      replicas: 3
+      wait-for-rollout: true
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+### 3. **Java CI v2.2.0 (Stable - Java 8-23 Support)**
+
+```yaml
+name: CI v2.2.0
+on: [push, pull_request]
+jobs:
+  test:
+    uses: techishthoughts-org/java-workflows/.github/workflows/java-ci-universal.yml@v2.2.0
+    with:
+      java-version: '21'
+      build-tool: 'maven'  # or 'gradle'
+      os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
+      parallel-jobs: 8
+      cache-dependencies: true
+```
+
+**Use v2.x if you need:**
+- ✅ Java 8 support
+- ✅ Stable, proven workflow
+- ✅ Supported until January 2027
+
+### 4. **Java CI v1.0.0 (Stable Foundation - Maven Only)**
 
 ```yaml
 name: CI v1.0.0
@@ -373,6 +495,18 @@ steps:
     env:
       NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
       NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+```
+
+### SBOM Generation (NEW! v3.0.0) ⭐
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: techishthoughts-org/java-workflows/.github/actions/sbom-generate@v3
+    with:
+      build-tool: 'maven'              # or 'gradle'
+      sbom-format: 'cyclonedx'         # or 'spdx'
+      upload-sbom: true                # Upload as artifact
 ```
 
 ### Docker Build & Push

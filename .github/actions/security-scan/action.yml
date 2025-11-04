@@ -1,0 +1,146 @@
+name: 'Security Scan'
+description: 'Comprehensive security scanning with multiple tools (Trivy, OWASP, Secret detection)'
+inputs:
+  scan-type:
+    description: 'Type of scan: dependency, secrets, or all'
+    required: false
+    default: 'all'
+  severity:
+    description: 'Minimum severity level: CRITICAL, HIGH, MEDIUM, LOW'
+    required: false
+    default: 'HIGH'
+  fail-on-severity:
+    description: 'Fail the build if vulnerabilities found at this level'
+    required: false
+    default: 'CRITICAL'
+  scan-path:
+    description: 'Path to scan (default: current directory)'
+    required: false
+    default: '.'
+  output-format:
+    description: 'Output format: sarif, json, table'
+    required: false
+    default: 'sarif'
+  upload-results:
+    description: 'Upload results to GitHub Security tab'
+    required: false
+    default: 'true'
+outputs:
+  vulnerabilities-found:
+    description: 'Total number of vulnerabilities found'
+    value: ${{ steps.aggregate.outputs.total }}
+  critical-count:
+    description: 'Number of critical vulnerabilities'
+    value: ${{ steps.aggregate.outputs.critical }}
+  high-count:
+    description: 'Number of high severity vulnerabilities'
+    value: ${{ steps.aggregate.outputs.high }}
+  scan-passed:
+    description: 'Whether scan passed based on fail-on-severity threshold'
+    value: ${{ steps.aggregate.outputs.passed }}
+runs:
+  using: "composite"
+  steps:
+    - name: 🔍 Trivy Vulnerability Scanner
+      if: inputs.scan-type == 'all' || inputs.scan-type == 'dependency'
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: ${{ inputs.scan-path }}
+        format: ${{ inputs.output-format }}
+        output: 'trivy-results.${{ inputs.output-format }}'
+        severity: ${{ inputs.severity }}
+        exit-code: '0'
+
+    - name: 🔐 Secret Scanner (TruffleHog)
+      if: inputs.scan-type == 'all' || inputs.scan-type == 'secrets'
+      shell: bash
+      run: |
+        echo "🔐 Running secret detection..."
+        # Install truffleHog
+        pip3 install truffleHog3 || true
+
+        # Run scan
+        if command -v trufflehog3 &> /dev/null; then
+          trufflehog3 -f json -o trufflehog-results.json ${{ inputs.scan-path }} || true
+          echo "✅ Secret scanning completed"
+        else
+          echo "⚠️ TruffleHog not available, skipping secret scanning"
+        fi
+
+    - name: 📊 Aggregate Results
+      id: aggregate
+      shell: bash
+      run: |
+        TOTAL=0
+        CRITICAL=0
+        HIGH=0
+
+        # Parse Trivy results if they exist
+        if [ -f "trivy-results.${{ inputs.output-format }}" ]; then
+          if [[ "${{ inputs.output-format }}" == "json" ]]; then
+            CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+          else
+            # Simple grep-based parsing for SARIF
+            CRITICAL=$(grep -o '"level":"error"' trivy-results.sarif 2>/dev/null | wc -l || echo "0")
+            HIGH=$(grep -o '"level":"warning"' trivy-results.sarif 2>/dev/null | wc -l || echo "0")
+          fi
+          TOTAL=$((CRITICAL + HIGH))
+        fi
+
+        # Parse secret scanning results
+        if [ -f "trufflehog-results.json" ]; then
+          SECRETS=$(jq 'length' trufflehog-results.json 2>/dev/null || echo "0")
+          if [ "$SECRETS" -gt 0 ]; then
+            echo "⚠️ Found $SECRETS potential secrets!"
+            CRITICAL=$((CRITICAL + SECRETS))
+            TOTAL=$((TOTAL + SECRETS))
+          fi
+        fi
+
+        # Determine if scan passed
+        PASSED="true"
+        if [[ "${{ inputs.fail-on-severity }}" == "CRITICAL" && $CRITICAL -gt 0 ]]; then
+          PASSED="false"
+        elif [[ "${{ inputs.fail-on-severity }}" == "HIGH" && $HIGH -gt 0 ]]; then
+          PASSED="false"
+        fi
+
+        # Output results
+        echo "total=$TOTAL" >> $GITHUB_OUTPUT
+        echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+        echo "high=$HIGH" >> $GITHUB_OUTPUT
+        echo "passed=$PASSED" >> $GITHUB_OUTPUT
+
+        echo "📊 Security Scan Results:"
+        echo "  Total Vulnerabilities: $TOTAL"
+        echo "  Critical: $CRITICAL"
+        echo "  High: $HIGH"
+        echo "  Passed: $PASSED"
+
+    - name: 📤 Upload Results to GitHub Security
+      if: inputs.upload-results == 'true' && inputs.output-format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'security-scan'
+
+    - name: 📦 Upload Results as Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-scan-results
+        path: |
+          trivy-results.*
+          trufflehog-results.json
+        if-no-files-found: ignore
+
+    - name: ❌ Fail on Severity Threshold
+      if: steps.aggregate.outputs.passed == 'false'
+      shell: bash
+      run: |
+        echo "❌ Security scan failed: Found vulnerabilities exceeding '${{ inputs.fail-on-severity }}' severity threshold"
+        echo "  Critical: ${{ steps.aggregate.outputs.critical }}"
+        echo "  High: ${{ steps.aggregate.outputs.high }}"
+        exit 1

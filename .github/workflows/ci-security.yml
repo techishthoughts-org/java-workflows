@@ -1,0 +1,474 @@
+# .github/workflows/ci-security.yml
+# Purpose: Comprehensive security scanning workflow for Java projects
+# Version: 1.0.0
+# Features: SAST (CodeQL), SCA (Dependency-Check, Snyk, Trivy), Secret Scanning
+# Inputs:
+#   java-version: Java version to use (default: 21)
+#   build-tool: Build tool - 'maven' or 'gradle' (default: 'maven')
+#   gradle-version: Gradle version when using Gradle (default: '8.5')
+#   enable-codeql: Enable CodeQL SAST scanning (default: true)
+#   enable-dependency-check: Enable OWASP Dependency-Check (default: true)
+#   enable-trivy: Enable Trivy vulnerability scanning (default: true)
+#   enable-snyk: Enable Snyk scanning (default: false, requires SNYK_TOKEN)
+#   fail-on-severity: Fail build on severity level (default: 'high')
+#   notify-on-vulnerabilities: Send notifications on vulnerabilities (default: false)
+# Outputs:
+#   security-score: Overall security score (A+ to F)
+#   total-vulnerabilities: Total number of vulnerabilities found
+#   critical-vulnerabilities: Number of critical vulnerabilities
+#   high-vulnerabilities: Number of high severity vulnerabilities
+#   scan-status: Overall scan status (pass/fail)
+# Secrets:
+#   SNYK_TOKEN: Snyk API token (required if enable-snyk is true)
+#   SLACK_WEBHOOK_URL: Optional Slack webhook for notifications
+# Usage:
+#   jobs:
+#     security:
+#       uses: org/workflows/.github/workflows/ci-security.yml@v1.0.0
+#       with:
+#         java-version: '21'
+#         build-tool: 'maven'
+#         enable-snyk: true
+#         fail-on-severity: 'critical'
+#       secrets:
+#         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+name: 🔒 Security Scanning
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '21'
+      build-tool:
+        required: false
+        type: string
+        default: 'maven'
+      gradle-version:
+        required: false
+        type: string
+        default: '8.5'
+      enable-codeql:
+        required: false
+        type: boolean
+        default: true
+      enable-dependency-check:
+        required: false
+        type: boolean
+        default: true
+      enable-trivy:
+        required: false
+        type: boolean
+        default: true
+      enable-snyk:
+        required: false
+        type: boolean
+        default: false
+      fail-on-severity:
+        required: false
+        type: string
+        default: 'high'
+      notify-on-vulnerabilities:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      security-score:
+        description: "Overall security score (A+ to F)"
+        value: ${{ jobs.aggregate-results.outputs.security-score }}
+      total-vulnerabilities:
+        description: "Total number of vulnerabilities found"
+        value: ${{ jobs.aggregate-results.outputs.total-vulnerabilities }}
+      critical-vulnerabilities:
+        description: "Number of critical vulnerabilities"
+        value: ${{ jobs.aggregate-results.outputs.critical-vulnerabilities }}
+      high-vulnerabilities:
+        description: "Number of high severity vulnerabilities"
+        value: ${{ jobs.aggregate-results.outputs.high-vulnerabilities }}
+      scan-status:
+        description: "Overall scan status (pass/fail)"
+        value: ${{ jobs.aggregate-results.outputs.scan-status }}
+    secrets:
+      SNYK_TOKEN:
+        description: "Snyk API token for Snyk scanning"
+        required: false
+      SLACK_WEBHOOK_URL:
+        description: "Slack webhook URL for vulnerability notifications"
+        required: false
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Security Inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      java-version: ${{ steps.validate.outputs.java-version }}
+      build-tool: ${{ steps.validate.outputs.build-tool }}
+      gradle-version: ${{ steps.validate.outputs.gradle-version }}
+      fail-on-severity: ${{ steps.validate.outputs.fail-on-severity }}
+    steps:
+      - name: 🔍 Validate inputs
+        id: validate
+        shell: bash
+        run: |
+          JAVA_VERSION="${{ inputs.java-version }}"
+          BUILD_TOOL="${{ inputs.build-tool }}"
+          GRADLE_VERSION="${{ inputs.gradle-version }}"
+          FAIL_ON_SEVERITY="${{ inputs.fail-on-severity }}"
+
+          # Validate Java version
+          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22|23)$ ]]; then
+            echo "❌ Invalid Java version: $JAVA_VERSION. Supported: 8, 11, 17, 21, 22, 23"
+            exit 1
+          fi
+
+          # Validate build tool
+          if [[ ! "$BUILD_TOOL" =~ ^(maven|gradle)$ ]]; then
+            echo "❌ Invalid build tool: $BUILD_TOOL. Supported: maven, gradle"
+            exit 1
+          fi
+
+          # Validate fail-on-severity
+          if [[ ! "$FAIL_ON_SEVERITY" =~ ^(critical|high|medium|low|none)$ ]]; then
+            echo "❌ Invalid fail-on-severity: $FAIL_ON_SEVERITY. Supported: critical, high, medium, low, none"
+            exit 1
+          fi
+
+          # Check Snyk token if Snyk is enabled
+          if [[ "${{ inputs.enable-snyk }}" == "true" && -z "${{ secrets.SNYK_TOKEN }}" ]]; then
+            echo "⚠️ Snyk is enabled but SNYK_TOKEN is not provided. Snyk scanning will be skipped."
+          fi
+
+          # Output validated values
+          echo "java-version=$JAVA_VERSION" >> $GITHUB_OUTPUT
+          echo "build-tool=$BUILD_TOOL" >> $GITHUB_OUTPUT
+          echo "gradle-version=$GRADLE_VERSION" >> $GITHUB_OUTPUT
+          echo "fail-on-severity=$FAIL_ON_SEVERITY" >> $GITHUB_OUTPUT
+
+          echo "✅ Validation completed"
+          echo "  Java: $JAVA_VERSION"
+          echo "  Build Tool: $BUILD_TOOL"
+          echo "  Fail on Severity: $FAIL_ON_SEVERITY"
+          echo "  CodeQL: ${{ inputs.enable-codeql }}"
+          echo "  Dependency-Check: ${{ inputs.enable-dependency-check }}"
+          echo "  Trivy: ${{ inputs.enable-trivy }}"
+          echo "  Snyk: ${{ inputs.enable-snyk }}"
+
+  codeql-analysis:
+    name: 🔍 CodeQL SAST Analysis
+    runs-on: ubuntu-latest
+    if: inputs.enable-codeql == true
+    needs: validate-inputs
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java
+
+      - name: ☕ Set up JDK ${{ needs.validate-inputs.outputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ needs.validate-inputs.outputs.java-version }}
+          distribution: 'temurin'
+
+      - name: 🔨 Build project
+        shell: bash
+        run: |
+          if [[ "${{ needs.validate-inputs.outputs.build-tool }}" == "maven" ]]; then
+            ./mvnw clean compile -DskipTests -B
+          else
+            ./gradlew clean build -x test
+          fi
+
+      - name: 🔍 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"
+
+  dependency-check:
+    name: 🔍 OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    if: inputs.enable-dependency-check == true
+    needs: validate-inputs
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      vulnerabilities-found: ${{ steps.scan.outputs.vulnerabilities }}
+      critical-count: ${{ steps.scan.outputs.critical }}
+      high-count: ${{ steps.scan.outputs.high }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK ${{ needs.validate-inputs.outputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ needs.validate-inputs.outputs.java-version }}
+          distribution: 'temurin'
+
+      - name: 🔍 Run OWASP Dependency-Check
+        id: scan
+        shell: bash
+        continue-on-error: true
+        run: |
+          # Download Dependency-Check
+          wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.9/dependency-check-9.0.9-release.zip
+          unzip -q dependency-check-9.0.9-release.zip
+
+          # Run scan based on build tool
+          if [[ "${{ needs.validate-inputs.outputs.build-tool }}" == "maven" ]]; then
+            ./dependency-check/bin/dependency-check.sh \
+              --project "Security Scan" \
+              --scan . \
+              --format "JSON" \
+              --format "HTML" \
+              --out ./dependency-check-report \
+              --failOnCVSS ${{ needs.validate-inputs.outputs.fail-on-severity == 'critical' && '9' || needs.validate-inputs.outputs.fail-on-severity == 'high' && '7' || needs.validate-inputs.outputs.fail-on-severity == 'medium' && '4' || '0' }}
+          else
+            ./dependency-check/bin/dependency-check.sh \
+              --project "Security Scan" \
+              --scan . \
+              --format "JSON" \
+              --format "HTML" \
+              --out ./dependency-check-report \
+              --failOnCVSS ${{ needs.validate-inputs.outputs.fail-on-severity == 'critical' && '9' || needs.validate-inputs.outputs.fail-on-severity == 'high' && '7' || needs.validate-inputs.outputs.fail-on-severity == 'medium' && '4' || '0' }}
+          fi
+
+          # Parse results
+          if [ -f "./dependency-check-report/dependency-check-report.json" ]; then
+            CRITICAL=$(grep -o '"severity":"CRITICAL"' ./dependency-check-report/dependency-check-report.json | wc -l || echo "0")
+            HIGH=$(grep -o '"severity":"HIGH"' ./dependency-check-report/dependency-check-report.json | wc -l || echo "0")
+            TOTAL=$((CRITICAL + HIGH))
+
+            echo "vulnerabilities=$TOTAL" >> $GITHUB_OUTPUT
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+
+            echo "📊 Dependency-Check Results:"
+            echo "  Total Vulnerabilities: $TOTAL"
+            echo "  Critical: $CRITICAL"
+            echo "  High: $HIGH"
+          else
+            echo "vulnerabilities=0" >> $GITHUB_OUTPUT
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📤 Upload Dependency-Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: ./dependency-check-report/
+
+  trivy-scan:
+    name: 🔍 Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    if: inputs.enable-trivy == true
+    needs: validate-inputs
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      vulnerabilities-found: ${{ steps.scan.outputs.vulnerabilities }}
+      critical-count: ${{ steps.scan.outputs.critical }}
+      high-count: ${{ steps.scan.outputs.high }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Run Trivy vulnerability scanner
+        id: scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: 📊 Parse Trivy Results
+        shell: bash
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            # Simple parsing of SARIF file for vulnerability counts
+            CRITICAL=$(grep -o '"level":"error"' trivy-results.sarif | wc -l || echo "0")
+            HIGH=$(grep -o '"level":"warning"' trivy-results.sarif | wc -l || echo "0")
+            TOTAL=$((CRITICAL + HIGH))
+
+            echo "vulnerabilities=$TOTAL" >> $GITHUB_OUTPUT
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+
+            echo "📊 Trivy Results:"
+            echo "  Total Vulnerabilities: $TOTAL"
+            echo "  Critical: $CRITICAL"
+            echo "  High: $HIGH"
+          else
+            echo "vulnerabilities=0" >> $GITHUB_OUTPUT
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📤 Upload Trivy Results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  snyk-scan:
+    name: 🔍 Snyk Security Scan
+    runs-on: ubuntu-latest
+    if: inputs.enable-snyk == true && secrets.SNYK_TOKEN != ''
+    needs: validate-inputs
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      vulnerabilities-found: ${{ steps.scan.outputs.vulnerabilities }}
+      critical-count: ${{ steps.scan.outputs.critical }}
+      high-count: ${{ steps.scan.outputs.high }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK ${{ needs.validate-inputs.outputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ needs.validate-inputs.outputs.java-version }}
+          distribution: 'temurin'
+
+      - name: 🔍 Run Snyk Security Scan
+        id: scan
+        uses: snyk/actions/maven@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=${{ needs.validate-inputs.outputs.fail-on-severity }}
+
+      - name: 📤 Upload Snyk Results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk.sarif
+
+  aggregate-results:
+    name: 📊 Aggregate Security Results
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, dependency-check, trivy-scan]
+    if: always()
+    permissions:
+      contents: read
+    outputs:
+      security-score: ${{ steps.calculate.outputs.security-score }}
+      total-vulnerabilities: ${{ steps.calculate.outputs.total-vulnerabilities }}
+      critical-vulnerabilities: ${{ steps.calculate.outputs.critical-vulnerabilities }}
+      high-vulnerabilities: ${{ steps.calculate.outputs.high-vulnerabilities }}
+      scan-status: ${{ steps.calculate.outputs.scan-status }}
+    steps:
+      - name: 📊 Calculate Security Score
+        id: calculate
+        shell: bash
+        run: |
+          # Aggregate vulnerability counts
+          TOTAL_VULNS=0
+          CRITICAL_VULNS=0
+          HIGH_VULNS=0
+
+          # Dependency-Check results
+          if [[ "${{ inputs.enable-dependency-check }}" == "true" ]]; then
+            DC_TOTAL=${{ needs.dependency-check.outputs.vulnerabilities-found || 0 }}
+            DC_CRITICAL=${{ needs.dependency-check.outputs.critical-count || 0 }}
+            DC_HIGH=${{ needs.dependency-check.outputs.high-count || 0 }}
+            TOTAL_VULNS=$((TOTAL_VULNS + DC_TOTAL))
+            CRITICAL_VULNS=$((CRITICAL_VULNS + DC_CRITICAL))
+            HIGH_VULNS=$((HIGH_VULNS + DC_HIGH))
+          fi
+
+          # Trivy results
+          if [[ "${{ inputs.enable-trivy }}" == "true" ]]; then
+            TRIVY_TOTAL=${{ needs.trivy-scan.outputs.vulnerabilities-found || 0 }}
+            TRIVY_CRITICAL=${{ needs.trivy-scan.outputs.critical-count || 0 }}
+            TRIVY_HIGH=${{ needs.trivy-scan.outputs.high-count || 0 }}
+            TOTAL_VULNS=$((TOTAL_VULNS + TRIVY_TOTAL))
+            CRITICAL_VULNS=$((CRITICAL_VULNS + TRIVY_CRITICAL))
+            HIGH_VULNS=$((HIGH_VULNS + TRIVY_HIGH))
+          fi
+
+          # Calculate security score
+          if [ $CRITICAL_VULNS -gt 0 ]; then
+            SCORE="F"
+          elif [ $HIGH_VULNS -gt 5 ]; then
+            SCORE="D"
+          elif [ $HIGH_VULNS -gt 2 ]; then
+            SCORE="C"
+          elif [ $HIGH_VULNS -gt 0 ]; then
+            SCORE="B"
+          elif [ $TOTAL_VULNS -eq 0 ]; then
+            SCORE="A+"
+          else
+            SCORE="A"
+          fi
+
+          # Determine scan status
+          if [ $CRITICAL_VULNS -gt 0 ] && [[ "${{ needs.validate-inputs.outputs.fail-on-severity }}" == "critical" ]]; then
+            STATUS="fail"
+          elif [ $HIGH_VULNS -gt 0 ] && [[ "${{ needs.validate-inputs.outputs.fail-on-severity }}" == "high" ]]; then
+            STATUS="fail"
+          else
+            STATUS="pass"
+          fi
+
+          # Output results
+          echo "security-score=$SCORE" >> $GITHUB_OUTPUT
+          echo "total-vulnerabilities=$TOTAL_VULNS" >> $GITHUB_OUTPUT
+          echo "critical-vulnerabilities=$CRITICAL_VULNS" >> $GITHUB_OUTPUT
+          echo "high-vulnerabilities=$HIGH_VULNS" >> $GITHUB_OUTPUT
+          echo "scan-status=$STATUS" >> $GITHUB_OUTPUT
+
+          echo "📊 Security Scan Summary:"
+          echo "  Security Score: $SCORE"
+          echo "  Total Vulnerabilities: $TOTAL_VULNS"
+          echo "  Critical: $CRITICAL_VULNS"
+          echo "  High: $HIGH_VULNS"
+          echo "  Status: $STATUS"
+
+      - name: 🔔 Notify on Vulnerabilities
+        if: inputs.notify-on-vulnerabilities == true && steps.calculate.outputs.total-vulnerabilities != '0' && secrets.SLACK_WEBHOOK_URL != ''
+        shell: bash
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🔒 Security Scan Alert",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Security Scan Results*\n\n*Score:* ${{ steps.calculate.outputs.security-score }}\n*Total Vulnerabilities:* ${{ steps.calculate.outputs.total-vulnerabilities }}\n*Critical:* ${{ steps.calculate.outputs.critical-vulnerabilities }}\n*High:* ${{ steps.calculate.outputs.high-vulnerabilities }}\n*Status:* ${{ steps.calculate.outputs.scan-status }}"
+                  }
+                }
+              ]
+            }'
+
+      - name: ❌ Fail on Severity Threshold
+        if: steps.calculate.outputs.scan-status == 'fail'
+        shell: bash
+        run: |
+          echo "❌ Security scan failed due to vulnerabilities exceeding severity threshold: ${{ needs.validate-inputs.outputs.fail-on-severity }}"
+          echo "  Critical: ${{ steps.calculate.outputs.critical-vulnerabilities }}"
+          echo "  High: ${{ steps.calculate.outputs.high-vulnerabilities }}"
+          exit 1

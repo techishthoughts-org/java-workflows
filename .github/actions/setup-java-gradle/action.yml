@@ -1,0 +1,89 @@
+name: 'Setup Java & Gradle'
+description: 'Sets up Java and Gradle with caching and wrapper support'
+inputs:
+  java-version:
+    description: 'Java version to use'
+    required: true
+  java-distribution:
+    description: 'Java distribution (temurin, zulu, liberica, corretto, microsoft, oracle)'
+    required: false
+    default: 'temurin'
+  gradle-version:
+    description: 'Gradle version to use (ignored if wrapper exists)'
+    required: false
+    default: '8.5'
+  cache-dependencies:
+    description: 'Enable dependency caching'
+    required: false
+    default: 'true'
+  gradle-build-args:
+    description: 'Additional Gradle build arguments'
+    required: false
+    default: ''
+outputs:
+  gradle-version-used:
+    description: 'The Gradle version that was used'
+    value: ${{ steps.setup-gradle.outputs.gradle-version }}
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.cache-gradle.outputs.cache-hit }}
+runs:
+  using: "composite"
+  steps:
+    - name: ☕ Set up JDK ${{ inputs.java-version }}
+      uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: ${{ inputs.java-distribution }}
+
+    - name: 📦 Cache Gradle dependencies
+      id: cache-gradle
+      if: inputs.cache-dependencies == 'true'
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: 🔧 Setup Gradle
+      id: setup-gradle
+      shell: bash
+      run: |
+        if [ -f "./gradlew" ]; then
+          echo "✅ Using Gradle Wrapper"
+          chmod +x ./gradlew
+          GRADLE_VERSION=$(./gradlew --version | grep "Gradle " | awk '{print $2}')
+          echo "gradle-version=$GRADLE_VERSION" >> $GITHUB_OUTPUT
+          echo "  Wrapper Version: $GRADLE_VERSION"
+        else
+          echo "📥 Installing Gradle ${{ inputs.gradle-version }}"
+          wget -q https://services.gradle.org/distributions/gradle-${{ inputs.gradle-version }}-bin.zip
+          unzip -q gradle-${{ inputs.gradle-version }}-bin.zip
+          echo "$PWD/gradle-${{ inputs.gradle-version }}/bin" >> $GITHUB_PATH
+          echo "gradle-version=${{ inputs.gradle-version }}" >> $GITHUB_OUTPUT
+          echo "  Installed Version: ${{ inputs.gradle-version }}"
+        fi
+
+        # Validate Gradle installation
+        if [ -f "./gradlew" ]; then
+          ./gradlew --version
+        else
+          gradle --version
+        fi
+
+    - name: 🎯 Gradle Build Properties
+      shell: bash
+      run: |
+        echo "🎯 Gradle Build Configuration:"
+        echo "  Java Version: ${{ inputs.java-version }}"
+        echo "  Java Distribution: ${{ inputs.java-distribution }}"
+        echo "  Gradle Version: ${{ inputs.gradle-version }}"
+        echo "  Cache Enabled: ${{ inputs.cache-dependencies }}"
+        echo "  Cache Hit: ${{ steps.cache-gradle.outputs.cache-hit || 'N/A' }}"
+
+        if [ -n "${{ inputs.gradle-build-args }}" ]; then
+          echo "  Build Args: ${{ inputs.gradle-build-args }}"
+        fi

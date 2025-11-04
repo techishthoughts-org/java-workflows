@@ -1,0 +1,301 @@
+name: 'Publish Java Artifacts'
+description: 'Publish Java artifacts to various repositories (Maven Central, GitHub Packages, Nexus, Artifactory)'
+inputs:
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  publish-target:
+    description: 'Target repository: github, maven-central, nexus, artifactory, or aws-codeartifact'
+    required: true
+  artifact-version:
+    description: 'Version of the artifact to publish'
+    required: true
+  java-version:
+    description: 'Java version to use for building'
+    required: false
+    default: '21'
+  repository-url:
+    description: 'Repository URL (for nexus, artifactory, or custom repos)'
+    required: false
+  repository-id:
+    description: 'Repository ID for authentication'
+    required: false
+    default: 'releases'
+  skip-tests:
+    description: 'Skip tests during build'
+    required: false
+    default: 'false'
+  gpg-sign:
+    description: 'Sign artifacts with GPG (required for Maven Central)'
+    required: false
+    default: 'false'
+  dry-run:
+    description: 'Perform a dry run without actually publishing'
+    required: false
+    default: 'false'
+outputs:
+  published-version:
+    description: 'The version that was published'
+    value: ${{ steps.publish.outputs.version }}
+  artifact-url:
+    description: 'URL where the artifact can be accessed'
+    value: ${{ steps.publish.outputs.artifact-url }}
+  publish-status:
+    description: 'Status of the publish operation (success/failed)'
+    value: ${{ steps.publish.outputs.status }}
+runs:
+  using: "composite"
+  steps:
+    - name: ☕ Set up JDK ${{ inputs.java-version }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: 'temurin'
+        server-id: ${{ inputs.repository-id }}
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
+        gpg-private-key: ${{ env.GPG_PRIVATE_KEY || '' }}
+        gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+    - name: 📦 Cache Dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.build-tool }}-
+
+    - name: 🔨 Build Artifact
+      shell: bash
+      run: |
+        echo "🔨 Building artifact version ${{ inputs.artifact-version }}..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          if [[ "${{ inputs.skip-tests }}" == "true" ]]; then
+            ./mvnw clean package -DskipTests -B
+          else
+            ./mvnw clean package -B
+          fi
+        else
+          if [[ "${{ inputs.skip-tests }}" == "true" ]]; then
+            ./gradlew clean build -x test
+          else
+            ./gradlew clean build
+          fi
+        fi
+
+        echo "✅ Build completed successfully"
+
+    - name: 🔐 Setup GPG (if signing enabled)
+      if: inputs.gpg-sign == 'true'
+      shell: bash
+      run: |
+        if [ -n "$GPG_PRIVATE_KEY" ]; then
+          echo "🔐 Setting up GPG for artifact signing..."
+          echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          echo "✅ GPG key imported successfully"
+        else
+          echo "⚠️ GPG signing enabled but GPG_PRIVATE_KEY not provided"
+          exit 1
+        fi
+      env:
+        GPG_PRIVATE_KEY: ${{ env.GPG_PRIVATE_KEY }}
+
+    - name: 📤 Publish to GitHub Packages
+      if: inputs.publish-target == 'github'
+      id: publish-github
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "🧪 DRY RUN: Would publish to GitHub Packages"
+          echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+          echo "artifact-url=https://github.com/${{ github.repository }}/packages" >> $GITHUB_OUTPUT
+          echo "status=dry-run-success" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "📤 Publishing to GitHub Packages..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw deploy -DskipTests -B \
+            -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}
+        else
+          ./gradlew publish -Pversion=${{ inputs.artifact-version }}
+        fi
+
+        echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+        echo "artifact-url=https://github.com/${{ github.repository }}/packages" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "✅ Published to GitHub Packages"
+      env:
+        MAVEN_USERNAME: ${{ github.actor }}
+        MAVEN_PASSWORD: ${{ github.token }}
+
+    - name: 📤 Publish to Maven Central (OSSRH)
+      if: inputs.publish-target == 'maven-central'
+      id: publish-maven-central
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "🧪 DRY RUN: Would publish to Maven Central"
+          echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+          echo "artifact-url=https://search.maven.org/artifact/$GROUP_ID/$ARTIFACT_ID/${{ inputs.artifact-version }}/jar" >> $GITHUB_OUTPUT
+          echo "status=dry-run-success" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [[ "${{ inputs.gpg-sign }}" != "true" ]]; then
+          echo "❌ Maven Central requires GPG signing. Set gpg-sign: true"
+          exit 1
+        fi
+
+        echo "📤 Publishing to Maven Central (OSSRH)..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw deploy -DskipTests -B -Prelease \
+            -Dgpg.passphrase=$MAVEN_GPG_PASSPHRASE
+        else
+          ./gradlew publishToMavenCentral -Pversion=${{ inputs.artifact-version }} \
+            -Psigning.gnupg.passphrase=$MAVEN_GPG_PASSPHRASE
+        fi
+
+        echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+        echo "artifact-url=https://repo1.maven.org/maven2/" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "✅ Published to Maven Central"
+      env:
+        MAVEN_USERNAME: ${{ env.OSSRH_USERNAME }}
+        MAVEN_PASSWORD: ${{ env.OSSRH_PASSWORD }}
+        MAVEN_GPG_PASSPHRASE: ${{ env.GPG_PASSPHRASE }}
+
+    - name: 📤 Publish to Nexus
+      if: inputs.publish-target == 'nexus'
+      id: publish-nexus
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "🧪 DRY RUN: Would publish to Nexus at ${{ inputs.repository-url }}"
+          echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+          echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+          echo "status=dry-run-success" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ -z "${{ inputs.repository-url }}" ]; then
+          echo "❌ repository-url is required for Nexus publishing"
+          exit 1
+        fi
+
+        echo "📤 Publishing to Nexus at ${{ inputs.repository-url }}..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw deploy -DskipTests -B \
+            -DaltDeploymentRepository=${{ inputs.repository-id }}::default::${{ inputs.repository-url }}
+        else
+          ./gradlew publish -Pversion=${{ inputs.artifact-version }} \
+            -PrepoUrl=${{ inputs.repository-url }}
+        fi
+
+        echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+        echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "✅ Published to Nexus"
+      env:
+        MAVEN_USERNAME: ${{ env.NEXUS_USERNAME }}
+        MAVEN_PASSWORD: ${{ env.NEXUS_PASSWORD }}
+
+    - name: 📤 Publish to JFrog Artifactory
+      if: inputs.publish-target == 'artifactory'
+      id: publish-artifactory
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "🧪 DRY RUN: Would publish to Artifactory at ${{ inputs.repository-url }}"
+          echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+          echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+          echo "status=dry-run-success" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ -z "${{ inputs.repository-url }}" ]; then
+          echo "❌ repository-url is required for Artifactory publishing"
+          exit 1
+        fi
+
+        echo "📤 Publishing to JFrog Artifactory at ${{ inputs.repository-url }}..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw deploy -DskipTests -B \
+            -DaltDeploymentRepository=${{ inputs.repository-id }}::default::${{ inputs.repository-url }}
+        else
+          ./gradlew artifactoryPublish -Pversion=${{ inputs.artifact-version }}
+        fi
+
+        echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+        echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "✅ Published to Artifactory"
+      env:
+        MAVEN_USERNAME: ${{ env.ARTIFACTORY_USERNAME }}
+        MAVEN_PASSWORD: ${{ env.ARTIFACTORY_PASSWORD }}
+
+    - name: 📤 Publish to AWS CodeArtifact
+      if: inputs.publish-target == 'aws-codeartifact'
+      id: publish-aws
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          echo "🧪 DRY RUN: Would publish to AWS CodeArtifact"
+          echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+          echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+          echo "status=dry-run-success" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "📤 Publishing to AWS CodeArtifact..."
+
+        # Get CodeArtifact token
+        export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+          --domain $AWS_CODEARTIFACT_DOMAIN \
+          --query authorizationToken \
+          --output text)
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw deploy -DskipTests -B \
+            -DaltDeploymentRepository=${{ inputs.repository-id }}::default::${{ inputs.repository-url }}
+        else
+          ./gradlew publish -Pversion=${{ inputs.artifact-version }}
+        fi
+
+        echo "version=${{ inputs.artifact-version }}" >> $GITHUB_OUTPUT
+        echo "artifact-url=${{ inputs.repository-url }}" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "✅ Published to AWS CodeArtifact"
+      env:
+        MAVEN_USERNAME: aws
+        MAVEN_PASSWORD: ${{ env.CODEARTIFACT_AUTH_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+
+    - name: 📊 Publish Summary
+      id: publish
+      shell: bash
+      run: |
+        # Consolidate outputs from all publish steps
+        VERSION="${{ steps.publish-github.outputs.version || steps.publish-maven-central.outputs.version || steps.publish-nexus.outputs.version || steps.publish-artifactory.outputs.version || steps.publish-aws.outputs.version }}"
+        ARTIFACT_URL="${{ steps.publish-github.outputs.artifact-url || steps.publish-maven-central.outputs.artifact-url || steps.publish-nexus.outputs.artifact-url || steps.publish-artifactory.outputs.artifact-url || steps.publish-aws.outputs.artifact-url }}"
+        STATUS="${{ steps.publish-github.outputs.status || steps.publish-maven-central.outputs.status || steps.publish-nexus.outputs.status || steps.publish-artifactory.outputs.status || steps.publish-aws.outputs.status }}"
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "artifact-url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+        echo "📊 Publish Summary:"
+        echo "  Target: ${{ inputs.publish-target }}"
+        echo "  Version: $VERSION"
+        echo "  Artifact URL: $ARTIFACT_URL"
+        echo "  Status: $STATUS"

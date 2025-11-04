@@ -1,0 +1,305 @@
+name: 'Enhanced Test Reporting'
+description: 'Generate beautiful test reports with Allure, Serenity, or standard formats'
+inputs:
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  report-type:
+    description: 'Report type: allure, serenity, junit, or auto'
+    required: false
+    default: 'auto'
+  test-results-path:
+    description: 'Path to test results (auto-detected if not provided)'
+    required: false
+  report-title:
+    description: 'Title for the test report'
+    required: false
+    default: 'Test Report'
+  include-history:
+    description: 'Include historical trend data'
+    required: false
+    default: 'true'
+  generate-summary:
+    description: 'Generate summary in GitHub Step Summary'
+    required: false
+    default: 'true'
+  upload-report:
+    description: 'Upload report as artifact'
+    required: false
+    default: 'true'
+  publish-github-pages:
+    description: 'Publish report to GitHub Pages'
+    required: false
+    default: 'false'
+outputs:
+  report-path:
+    description: 'Path to generated report'
+    value: ${{ steps.generate.outputs.report-path }}
+  total-tests:
+    description: 'Total number of tests'
+    value: ${{ steps.parse.outputs.total-tests }}
+  passed-tests:
+    description: 'Number of passed tests'
+    value: ${{ steps.parse.outputs.passed-tests }}
+  failed-tests:
+    description: 'Number of failed tests'
+    value: ${{ steps.parse.outputs.failed-tests }}
+  skipped-tests:
+    description: 'Number of skipped tests'
+    value: ${{ steps.parse.outputs.skipped-tests }}
+  success-rate:
+    description: 'Test success rate percentage'
+    value: ${{ steps.parse.outputs.success-rate }}
+  report-url:
+    description: 'URL to view the report'
+    value: ${{ steps.publish.outputs.report-url }}
+runs:
+  using: "composite"
+  steps:
+    - name: 🔍 Detect Report Type
+      id: detect
+      shell: bash
+      run: |
+        REPORT_TYPE="${{ inputs.report-type }}"
+
+        if [[ "$REPORT_TYPE" == "auto" ]]; then
+          # Auto-detect based on project configuration
+          if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+            if grep -q "allure" pom.xml 2>/dev/null; then
+              REPORT_TYPE="allure"
+            elif grep -q "serenity" pom.xml 2>/dev/null; then
+              REPORT_TYPE="serenity"
+            else
+              REPORT_TYPE="junit"
+            fi
+          else
+            if grep -q "allure" build.gradle* 2>/dev/null; then
+              REPORT_TYPE="allure"
+            elif grep -q "serenity" build.gradle* 2>/dev/null; then
+              REPORT_TYPE="serenity"
+            else
+              REPORT_TYPE="junit"
+            fi
+          fi
+        fi
+
+        echo "report-type=$REPORT_TYPE" >> $GITHUB_OUTPUT
+        echo "📊 Detected report type: $REPORT_TYPE"
+
+    - name: 📊 Generate Allure Report
+      if: steps.detect.outputs.report-type == 'allure'
+      shell: bash
+      run: |
+        echo "📊 Generating Allure report..."
+
+        # Install Allure if not present
+        if ! command -v allure &> /dev/null; then
+          echo "Installing Allure..."
+          curl -o allure.tgz -L https://github.com/allure-framework/allure2/releases/download/2.25.0/allure-2.25.0.tgz
+          tar -zxvf allure.tgz -C /tmp
+          export PATH="/tmp/allure-2.25.0/bin:$PATH"
+        fi
+
+        # Determine results path
+        if [[ -n "${{ inputs.test-results-path }}" ]]; then
+          RESULTS_PATH="${{ inputs.test-results-path }}"
+        elif [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          RESULTS_PATH="target/allure-results"
+        else
+          RESULTS_PATH="build/allure-results"
+        fi
+
+        # Generate report
+        if [ -d "$RESULTS_PATH" ]; then
+          allure generate "$RESULTS_PATH" -o allure-report --clean
+          echo "✅ Allure report generated"
+        else
+          echo "⚠️ Allure results not found at $RESULTS_PATH"
+        fi
+
+    - name: 📊 Generate Serenity Report
+      if: steps.detect.outputs.report-type == 'serenity'
+      shell: bash
+      run: |
+        echo "📊 Generating Serenity report..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw serenity:aggregate
+          REPORT_PATH="target/site/serenity"
+        else
+          ./gradlew aggregate
+          REPORT_PATH="build/reports/serenity"
+        fi
+
+        if [ -d "$REPORT_PATH" ]; then
+          echo "✅ Serenity report generated at $REPORT_PATH"
+        else
+          echo "⚠️ Serenity report not generated"
+        fi
+
+    - name: 📊 Process JUnit Report
+      if: steps.detect.outputs.report-type == 'junit'
+      shell: bash
+      run: |
+        echo "📊 Processing JUnit reports..."
+
+        # Determine test results path
+        if [[ -n "${{ inputs.test-results-path }}" ]]; then
+          RESULTS_PATH="${{ inputs.test-results-path }}"
+        elif [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          RESULTS_PATH="target/surefire-reports"
+        else
+          RESULTS_PATH="build/test-results/test"
+        fi
+
+        if [ -d "$RESULTS_PATH" ]; then
+          echo "✅ Found test results at $RESULTS_PATH"
+        else
+          echo "⚠️ Test results not found at $RESULTS_PATH"
+        fi
+
+    - name: 📊 Parse Test Results
+      id: parse
+      shell: bash
+      run: |
+        echo "📊 Parsing test results..."
+
+        # Determine results path
+        if [[ -n "${{ inputs.test-results-path }}" ]]; then
+          RESULTS_PATH="${{ inputs.test-results-path }}"
+        elif [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          RESULTS_PATH="target/surefire-reports"
+        else
+          RESULTS_PATH="build/test-results/test"
+        fi
+
+        # Parse XML test results
+        TOTAL=0
+        PASSED=0
+        FAILED=0
+        SKIPPED=0
+
+        if [ -d "$RESULTS_PATH" ]; then
+          for file in "$RESULTS_PATH"/*.xml; do
+            if [ -f "$file" ]; then
+              T=$(grep -o 'tests="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              F=$(grep -o 'failures="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              E=$(grep -o 'errors="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              S=$(grep -o 'skipped="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+
+              TOTAL=$((TOTAL + T))
+              FAILED=$((FAILED + F + E))
+              SKIPPED=$((SKIPPED + S))
+            fi
+          done
+
+          PASSED=$((TOTAL - FAILED - SKIPPED))
+
+          if [ $TOTAL -gt 0 ]; then
+            SUCCESS_RATE=$(echo "scale=2; ($PASSED / $TOTAL) * 100" | bc -l)
+          else
+            SUCCESS_RATE="0"
+          fi
+        else
+          SUCCESS_RATE="0"
+        fi
+
+        echo "total-tests=$TOTAL" >> $GITHUB_OUTPUT
+        echo "passed-tests=$PASSED" >> $GITHUB_OUTPUT
+        echo "failed-tests=$FAILED" >> $GITHUB_OUTPUT
+        echo "skipped-tests=$SKIPPED" >> $GITHUB_OUTPUT
+        echo "success-rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
+
+        echo "📊 Test Results:"
+        echo "  Total: $TOTAL"
+        echo "  Passed: $PASSED"
+        echo "  Failed: $FAILED"
+        echo "  Skipped: $SKIPPED"
+        echo "  Success Rate: ${SUCCESS_RATE}%"
+
+    - name: 📝 Generate Report Path
+      id: generate
+      shell: bash
+      run: |
+        REPORT_TYPE="${{ steps.detect.outputs.report-type }}"
+
+        case "$REPORT_TYPE" in
+          allure)
+            REPORT_PATH="allure-report"
+            ;;
+          serenity)
+            if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+              REPORT_PATH="target/site/serenity"
+            else
+              REPORT_PATH="build/reports/serenity"
+            fi
+            ;;
+          junit)
+            if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+              REPORT_PATH="target/surefire-reports"
+            else
+              REPORT_PATH="build/test-results/test"
+            fi
+            ;;
+        esac
+
+        echo "report-path=$REPORT_PATH" >> $GITHUB_OUTPUT
+
+    - name: 📝 Generate Summary
+      if: inputs.generate-summary == 'true'
+      shell: bash
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ### 🧪 ${{ inputs.report-title }}
+
+        | Metric | Value |
+        |--------|-------|
+        | **Total Tests** | ${{ steps.parse.outputs.total-tests }} |
+        | **Passed** | ✅ ${{ steps.parse.outputs.passed-tests }} |
+        | **Failed** | ❌ ${{ steps.parse.outputs.failed-tests }} |
+        | **Skipped** | ⏭️ ${{ steps.parse.outputs.skipped-tests }} |
+        | **Success Rate** | ${{ steps.parse.outputs.success-rate }}% |
+        | **Report Type** | ${{ steps.detect.outputs.report-type }} |
+
+        EOF
+
+        # Add status badge
+        SUCCESS_RATE=${{ steps.parse.outputs.success-rate }}
+        FAILED=${{ steps.parse.outputs.failed-tests }}
+
+        if [ "$FAILED" -eq 0 ]; then
+          echo "**Status:** ✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+        elif (( $(echo "$SUCCESS_RATE >= 90" | bc -l) )); then
+          echo "**Status:** ⚠️ Some tests failed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Status:** ❌ Many tests failed" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: 📤 Upload Test Report
+      if: inputs.upload-report == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-report-${{ steps.detect.outputs.report-type }}-${{ runner.os }}
+        path: ${{ steps.generate.outputs.report-path }}
+        retention-days: 30
+
+    - name: 🌐 Publish to GitHub Pages
+      id: publish
+      if: inputs.publish-github-pages == 'true' && steps.detect.outputs.report-type != 'junit'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ github.token }}
+        publish_dir: ${{ steps.generate.outputs.report-path }}
+        destination_dir: test-reports/${{ github.run_number }}
+        keep_files: true
+
+    - name: 📊 Test Report Tips
+      if: success()
+      shell: bash
+      run: |
+        echo "💡 Test Reporting Tips:"
+        echo "  - Use Allure for rich interactive reports"
+        echo "  - Use Serenity for BDD scenarios"
+        echo "  - Include screenshots and logs for failures"
+        echo "  - Track historical trends for quality monitoring"
+        echo "  - Publish reports to GitHub Pages for easy access"

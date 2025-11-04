@@ -1,0 +1,304 @@
+name: 'JMH Performance Benchmark'
+description: 'Run JMH (Java Microbenchmark Harness) performance benchmarks and track performance regressions'
+inputs:
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '21'
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  benchmark-pattern:
+    description: 'Benchmark pattern to run (regex)'
+    required: false
+    default: '.*'
+  warmup-iterations:
+    description: 'Number of warmup iterations'
+    required: false
+    default: '3'
+  measurement-iterations:
+    description: 'Number of measurement iterations'
+    required: false
+    default: '5'
+  forks:
+    description: 'Number of forks'
+    required: false
+    default: '1'
+  threads:
+    description: 'Number of threads'
+    required: false
+    default: '1'
+  jmh-args:
+    description: 'Additional JMH arguments'
+    required: false
+    default: ''
+  fail-on-regression:
+    description: 'Fail if performance regression detected'
+    required: false
+    default: 'false'
+  regression-threshold:
+    description: 'Regression threshold percentage (e.g., 10 for 10% slower)'
+    required: false
+    default: '20'
+  baseline-file:
+    description: 'Baseline results file for comparison'
+    required: false
+  output-format:
+    description: 'Output format: json, csv, text'
+    required: false
+    default: 'json'
+  upload-results:
+    description: 'Upload benchmark results as artifacts'
+    required: false
+    default: 'true'
+outputs:
+  results-file:
+    description: 'Path to benchmark results file'
+    value: ${{ steps.benchmark.outputs.results-file }}
+  average-score:
+    description: 'Average benchmark score'
+    value: ${{ steps.analyze.outputs.average-score }}
+  regression-detected:
+    description: 'Whether performance regression was detected'
+    value: ${{ steps.analyze.outputs.regression-detected }}
+  report-url:
+    description: 'URL to detailed benchmark report'
+    value: ${{ steps.report.outputs.report-url }}
+runs:
+  using: "composite"
+  steps:
+    - name: ☕ Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: 'temurin'
+        cache: ${{ inputs.build-tool }}
+
+    - name: 📦 Cache Benchmark Dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gradle/caches
+        key: ${{ runner.os }}-${{ inputs.build-tool }}-jmh-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.build-tool }}-jmh-
+
+    - name: 🔨 Build Project
+      shell: bash
+      run: |
+        echo "🔨 Building project..."
+
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          ./mvnw clean package -DskipTests -B
+        else
+          ./gradlew clean build -x test
+        fi
+
+    - name: ⚡ Run JMH Benchmarks
+      id: benchmark
+      shell: bash
+      run: |
+        echo "⚡ Running JMH benchmarks..."
+        START_TIME=$(date +%s)
+
+        # Prepare results directory
+        mkdir -p benchmark-results
+
+        # Determine results file path
+        RESULTS_FILE="benchmark-results/jmh-results.${{ inputs.output-format }}"
+
+        # Build JMH arguments
+        JMH_ARGS="-wi ${{ inputs.warmup-iterations }}"
+        JMH_ARGS="$JMH_ARGS -i ${{ inputs.measurement-iterations }}"
+        JMH_ARGS="$JMH_ARGS -f ${{ inputs.forks }}"
+        JMH_ARGS="$JMH_ARGS -t ${{ inputs.threads }}"
+
+        case "${{ inputs.output-format }}" in
+          json)
+            JMH_ARGS="$JMH_ARGS -rf json -rff $RESULTS_FILE"
+            ;;
+          csv)
+            JMH_ARGS="$JMH_ARGS -rf csv -rff $RESULTS_FILE"
+            ;;
+          text)
+            JMH_ARGS="$JMH_ARGS -rf text -rff $RESULTS_FILE"
+            ;;
+        esac
+
+        if [[ -n "${{ inputs.jmh-args }}" ]]; then
+          JMH_ARGS="$JMH_ARGS ${{ inputs.jmh-args }}"
+        fi
+
+        # Run benchmarks based on build tool
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          # Maven: Use JMH plugin or run JAR
+          if ./mvnw help:all-plugins | grep -q "jmh"; then
+            ./mvnw jmh:run -Djmh.benchmarks="${{ inputs.benchmark-pattern }}" $JMH_ARGS
+          else
+            # Find JMH JAR in target
+            JMH_JAR=$(find target -name "*jmh*.jar" -o -name "*benchmarks*.jar" | head -1)
+            if [ -n "$JMH_JAR" ]; then
+              java -jar "$JMH_JAR" "${{ inputs.benchmark-pattern }}" $JMH_ARGS
+            else
+              echo "❌ No JMH JAR found. Ensure JMH is configured in pom.xml"
+              exit 1
+            fi
+          fi
+        else
+          # Gradle: Use JMH plugin
+          ./gradlew jmh --args="${{ inputs.benchmark-pattern }} $JMH_ARGS"
+        fi
+
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+
+        echo "results-file=$RESULTS_FILE" >> $GITHUB_OUTPUT
+        echo "duration=${DURATION}s" >> $GITHUB_OUTPUT
+
+        echo "✅ Benchmarks completed in ${DURATION}s"
+        echo "📊 Results saved to: $RESULTS_FILE"
+
+    - name: 📊 Analyze Results
+      id: analyze
+      shell: bash
+      run: |
+        RESULTS_FILE="${{ steps.benchmark.outputs.results-file }}"
+
+        if [ ! -f "$RESULTS_FILE" ]; then
+          echo "⚠️ Results file not found"
+          echo "regression-detected=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "📊 Analyzing benchmark results..."
+
+        # Parse results based on format
+        if [[ "${{ inputs.output-format }}" == "json" ]]; then
+          # Extract average scores
+          if command -v jq &> /dev/null; then
+            AVG_SCORE=$(jq '[.[].primaryMetric.score] | add / length' "$RESULTS_FILE" 2>/dev/null || echo "0")
+            echo "average-score=$AVG_SCORE" >> $GITHUB_OUTPUT
+          else
+            echo "average-score=N/A" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "average-score=N/A" >> $GITHUB_OUTPUT
+        fi
+
+        # Compare with baseline if provided
+        REGRESSION_DETECTED="false"
+
+        if [[ -n "${{ inputs.baseline-file }}" && -f "${{ inputs.baseline-file }}" ]]; then
+          echo "📈 Comparing with baseline..."
+
+          # Simple comparison logic (can be enhanced)
+          if [[ "${{ inputs.output-format }}" == "json" && command -v jq &> /dev/null ]]; then
+            BASELINE_SCORE=$(jq '[.[].primaryMetric.score] | add / length' "${{ inputs.baseline-file }}" 2>/dev/null || echo "0")
+            CURRENT_SCORE=$(jq '[.[].primaryMetric.score] | add / length' "$RESULTS_FILE" 2>/dev/null || echo "0")
+
+            if (( $(echo "$BASELINE_SCORE > 0" | bc -l) )); then
+              CHANGE=$(echo "scale=2; (($BASELINE_SCORE - $CURRENT_SCORE) / $BASELINE_SCORE) * 100" | bc -l)
+              echo "Performance change: ${CHANGE}%"
+
+              if (( $(echo "$CHANGE > ${{ inputs.regression-threshold }}" | bc -l) )); then
+                REGRESSION_DETECTED="true"
+                echo "⚠️ Performance regression detected: ${CHANGE}% slower than baseline"
+              else
+                echo "✅ No significant performance regression"
+              fi
+            fi
+          fi
+        fi
+
+        echo "regression-detected=$REGRESSION_DETECTED" >> $GITHUB_OUTPUT
+
+    - name: 📝 Generate Report
+      id: report
+      shell: bash
+      run: |
+        RESULTS_FILE="${{ steps.benchmark.outputs.results-file }}"
+
+        if [ ! -f "$RESULTS_FILE" ]; then
+          exit 0
+        fi
+
+        # Generate human-readable report
+        REPORT_FILE="benchmark-results/report.md"
+
+        cat > "$REPORT_FILE" <<EOF
+# ⚡ JMH Benchmark Results
+
+**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+**Java Version:** ${{ inputs.java-version }}
+**Build Tool:** ${{ inputs.build-tool }}
+**Pattern:** \`${{ inputs.benchmark-pattern }}\`
+
+## Configuration
+
+| Setting | Value |
+|---------|-------|
+| Warmup Iterations | ${{ inputs.warmup-iterations }} |
+| Measurement Iterations | ${{ inputs.measurement-iterations }} |
+| Forks | ${{ inputs.forks }} |
+| Threads | ${{ inputs.threads }} |
+
+## Results
+
+EOF
+
+        # Add results summary
+        if [[ "${{ inputs.output-format }}" == "json" && command -v jq &> /dev/null ]]; then
+          echo "### Benchmark Scores" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "| Benchmark | Score | Unit |" >> "$REPORT_FILE"
+          echo "|-----------|-------|------|" >> "$REPORT_FILE"
+
+          jq -r '.[] | "| \(.benchmark) | \(.primaryMetric.score | tonumber | . * 100 | round / 100) | \(.primaryMetric.scoreUnit) |"' "$RESULTS_FILE" >> "$REPORT_FILE" 2>/dev/null || true
+        fi
+
+        # Add comparison if baseline exists
+        if [[ -n "${{ inputs.baseline-file }}" && -f "${{ inputs.baseline-file }}" ]]; then
+          echo "" >> "$REPORT_FILE"
+          echo "## Comparison with Baseline" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+
+          if [[ "${{ steps.analyze.outputs.regression-detected }}" == "true" ]]; then
+            echo "⚠️ **Performance Regression Detected**" >> "$REPORT_FILE"
+          else
+            echo "✅ **No Significant Regression**" >> "$REPORT_FILE"
+          fi
+        fi
+
+        echo "report-url=$REPORT_FILE" >> $GITHUB_OUTPUT
+
+        # Add to GitHub Step Summary
+        cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+
+    - name: 📤 Upload Benchmark Results
+      if: inputs.upload-results == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: jmh-benchmark-results-${{ runner.os }}
+        path: |
+          benchmark-results/
+        retention-days: 90
+
+    - name: ❌ Fail on Regression
+      if: inputs.fail-on-regression == 'true' && steps.analyze.outputs.regression-detected == 'true'
+      shell: bash
+      run: |
+        echo "❌ Performance regression detected (threshold: ${{ inputs.regression-threshold }}%)"
+        echo "Review the benchmark results and optimize the code."
+        exit 1
+
+    - name: 💡 Performance Tips
+      if: success()
+      shell: bash
+      run: |
+        echo "💡 JMH Benchmarking Tips:"
+        echo "  - Run with more forks for statistical confidence"
+        echo "  - Use warmup iterations to reach steady state"
+        echo "  - Monitor GC activity with -prof gc"
+        echo "  - Compare results across JVM versions"
+        echo "  - Store baseline results for regression detection"

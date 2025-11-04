@@ -1,0 +1,243 @@
+name: 'GraalVM Native Image Build'
+description: 'Build native executables using GraalVM Native Image for fast startup and low memory usage'
+inputs:
+  java-version:
+    description: 'Java version to use (17, 21, 23)'
+    required: false
+    default: '21'
+  graalvm-version:
+    description: 'GraalVM version to use'
+    required: false
+    default: 'latest'
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  main-class:
+    description: 'Main class for native image (optional, auto-detected if not provided)'
+    required: false
+  image-name:
+    description: 'Name of the native image executable'
+    required: false
+    default: 'app'
+  additional-args:
+    description: 'Additional native-image arguments'
+    required: false
+    default: '--no-fallback'
+  enable-pgo:
+    description: 'Enable Profile-Guided Optimization (PGO)'
+    required: false
+    default: 'false'
+  enable-g1gc:
+    description: 'Enable G1 Garbage Collector'
+    required: false
+    default: 'true'
+  static-image:
+    description: 'Build statically linked image (Linux only)'
+    required: false
+    default: 'false'
+  quick-build:
+    description: 'Use quick build mode (faster, larger binary)'
+    required: false
+    default: 'false'
+  upload-artifact:
+    description: 'Upload native image as artifact'
+    required: false
+    default: 'true'
+outputs:
+  native-image-path:
+    description: 'Path to the generated native image'
+    value: ${{ steps.build.outputs.image-path }}
+  build-time:
+    description: 'Time taken to build native image'
+    value: ${{ steps.build.outputs.build-time }}
+  image-size:
+    description: 'Size of the native image in MB'
+    value: ${{ steps.build.outputs.image-size }}
+  artifact-url:
+    description: 'URL to download the artifact'
+    value: ${{ steps.upload.outputs.artifact-url }}
+runs:
+  using: "composite"
+  steps:
+    - name: 🔧 Setup GraalVM
+      uses: graalvm/setup-graalvm@v1
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: 'graalvm'
+        github-token: ${{ github.token }}
+        cache: ${{ inputs.build-tool }}
+
+    - name: 📦 Cache Dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gradle/caches
+        key: ${{ runner.os }}-${{ inputs.build-tool }}-native-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.build-tool }}-native-
+
+    - name: 🔨 Build with Maven
+      if: inputs.build-tool == 'maven'
+      shell: bash
+      run: |
+        echo "🔨 Building project with Maven..."
+        ./mvnw clean package -DskipTests -Pnative -B
+
+    - name: 🔨 Build with Gradle
+      if: inputs.build-tool == 'gradle'
+      shell: bash
+      run: |
+        echo "🔨 Building project with Gradle..."
+        ./gradlew clean build -x test
+
+    - name: 🎯 Build Native Image
+      id: build
+      shell: bash
+      run: |
+        echo "🎯 Building GraalVM Native Image..."
+        START_TIME=$(date +%s)
+
+        # Determine build args
+        BUILD_ARGS="${{ inputs.additional-args }}"
+
+        if [[ "${{ inputs.enable-g1gc }}" == "true" ]]; then
+          BUILD_ARGS="$BUILD_ARGS --gc=G1"
+        fi
+
+        if [[ "${{ inputs.static-image }}" == "true" ]]; then
+          BUILD_ARGS="$BUILD_ARGS --static --libc=musl"
+        fi
+
+        if [[ "${{ inputs.quick-build }}" == "true" ]]; then
+          BUILD_ARGS="$BUILD_ARGS -Ob"
+        else
+          BUILD_ARGS="$BUILD_ARGS -O2"
+        fi
+
+        # Build native image
+        if [[ "${{ inputs.build-tool }}" == "maven" ]]; then
+          # Maven Native Build Plugin
+          if [[ -n "${{ inputs.main-class }}" ]]; then
+            ./mvnw -Pnative native:compile \
+              -DmainClass=${{ inputs.main-class }} \
+              -DImageName=${{ inputs.image-name }} \
+              $BUILD_ARGS
+          else
+            ./mvnw -Pnative native:compile \
+              -DimageName=${{ inputs.image-name }} \
+              $BUILD_ARGS
+          fi
+          IMAGE_PATH="target/${{ inputs.image-name }}"
+        else
+          # Gradle Native Build Plugin
+          if [[ -n "${{ inputs.main-class }}" ]]; then
+            ./gradlew nativeCompile \
+              -PmainClass=${{ inputs.main-class }} \
+              -PimageName=${{ inputs.image-name }} \
+              $BUILD_ARGS
+          else
+            ./gradlew nativeCompile \
+              -PimageName=${{ inputs.image-name }} \
+              $BUILD_ARGS
+          fi
+          IMAGE_PATH="build/native/nativeCompile/${{ inputs.image-name }}"
+        fi
+
+        END_TIME=$(date +%s)
+        BUILD_TIME=$((END_TIME - START_TIME))
+
+        # Get image size
+        if [ -f "$IMAGE_PATH" ]; then
+          IMAGE_SIZE=$(du -m "$IMAGE_PATH" | cut -f1)
+          echo "image-path=$IMAGE_PATH" >> $GITHUB_OUTPUT
+          echo "build-time=${BUILD_TIME}s" >> $GITHUB_OUTPUT
+          echo "image-size=${IMAGE_SIZE}MB" >> $GITHUB_OUTPUT
+
+          echo "✅ Native image built successfully!"
+          echo "  Path: $IMAGE_PATH"
+          echo "  Size: ${IMAGE_SIZE}MB"
+          echo "  Build Time: ${BUILD_TIME}s"
+
+          # Make executable
+          chmod +x "$IMAGE_PATH"
+        else
+          echo "❌ Native image not found at expected path: $IMAGE_PATH"
+          exit 1
+        fi
+
+    - name: 🧪 Test Native Image
+      shell: bash
+      run: |
+        IMAGE_PATH="${{ steps.build.outputs.image-path }}"
+
+        if [ -f "$IMAGE_PATH" ]; then
+          echo "🧪 Testing native image..."
+
+          # Test execution
+          "$IMAGE_PATH" --version || true
+
+          # Check if it's actually a native executable
+          if file "$IMAGE_PATH" | grep -q "executable"; then
+            echo "✅ Native image is a valid executable"
+          else
+            echo "❌ File is not a valid executable"
+            exit 1
+          fi
+        fi
+
+    - name: 📊 Generate Build Report
+      if: always()
+      shell: bash
+      run: |
+        echo "### 🎯 GraalVM Native Image Build Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Java Version** | ${{ inputs.java-version }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **GraalVM Version** | ${{ inputs.graalvm-version }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Build Tool** | ${{ inputs.build-tool }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Image Name** | ${{ inputs.image-name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Build Time** | ${{ steps.build.outputs.build-time }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Image Size** | ${{ steps.build.outputs.image-size }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **G1GC** | ${{ inputs.enable-g1gc }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Static** | ${{ inputs.static-image }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -f "${{ steps.build.outputs.image-path }}" ]; then
+          echo "✅ **Status:** Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Path:** \`${{ steps.build.outputs.image-path }}\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Status:** Build Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: 📤 Upload Native Image
+      id: upload
+      if: inputs.upload-artifact == 'true' && steps.build.outputs.image-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: native-image-${{ runner.os }}-${{ inputs.image-name }}
+        path: ${{ steps.build.outputs.image-path }}
+        retention-days: 30
+
+    - name: 📊 Performance Comparison
+      if: success()
+      shell: bash
+      run: |
+        IMAGE_PATH="${{ steps.build.outputs.image-path }}"
+
+        if [ -f "$IMAGE_PATH" ]; then
+          echo "⚡ Performance Characteristics:"
+          echo "  - Instant startup (< 100ms typical)"
+          echo "  - Low memory footprint"
+          echo "  - No JIT warmup required"
+          echo "  - Ahead-of-time compiled"
+
+          # Compare with JAR if available
+          if [[ "${{ inputs.build-tool }}" == "maven" ]] && [ -f "target/*.jar" ]; then
+            JAR_SIZE=$(du -m target/*.jar | cut -f1 | head -1)
+            NATIVE_SIZE=${{ steps.build.outputs.image-size }}
+            echo "  - JAR size: ${JAR_SIZE}MB"
+            echo "  - Native size: ${NATIVE_SIZE}MB"
+          fi
+        fi

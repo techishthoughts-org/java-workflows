@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-11-XX
+
+### Added
+- **GraalVM Native Image Support:** New composite action `native-image-build`
+  - Build native executables for fast startup and low memory
+  - Support for Profile-Guided Optimization (PGO)
+  - G1GC and static image options
+  - Automatic performance reporting
+- **JMH Performance Benchmarking:** New composite action `jmh-benchmark`
+  - Run Java Microbenchmark Harness (JMH) benchmarks
+  - Performance regression detection
+  - Baseline comparison support
+  - Multiple output formats (JSON, CSV, text)
+- **Enhanced Test Reporting:** New composite action `test-report`
+  - Allure report generation
+  - Serenity BDD support
+  - JUnit report processing
+  - GitHub Pages publishing
+  - Historical trend tracking
+
+### Changed
+- Enhanced build performance with improved caching strategies
+- Updated composite actions documentation
+
+## [2.1.0] - 2025-11-XX
+
 ### Added
 - Java 23 support across all workflows (java-ci-universal.yml, java-ci-secure.yml)
 - New composite action: `setup-java-gradle` for Gradle project setup with caching

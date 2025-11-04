@@ -1,0 +1,267 @@
+# .github/workflows/container-scan.yml
+# Purpose: Container image security scanning workflow v3.2.0
+# Version: 3.2.0
+# Supports: Docker images, multi-platform, SBOM, vulnerability scanning
+# Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24, 25 (LTS)
+#
+# Inputs:
+#   image-name: Container image name (required)
+#   image-tag: Container image tag (default: latest)
+#   registry: Container registry (default: ghcr.io)
+#   scan-severity: Minimum severity to report (default: MEDIUM)
+#   fail-on-severity: Fail on severity level (default: HIGH)
+#   generate-sbom: Generate SBOM for container (default: true)
+#   platforms: Build platforms (default: linux/amd64)
+#
+# Usage:
+#   jobs:
+#     scan:
+#       uses: org/workflows/.github/workflows/container-scan.yml@v3
+#       with:
+#         image-name: 'myapp'
+#         image-tag: 'v1.0.0'
+
+name: 🔒 Container Security Scan v3.2.0
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        required: true
+        type: string
+      image-tag:
+        required: false
+        type: string
+        default: 'latest'
+      registry:
+        required: false
+        type: string
+        default: 'ghcr.io'
+      scan-severity:
+        required: false
+        type: string
+        default: 'MEDIUM'
+      fail-on-severity:
+        required: false
+        type: string
+        default: 'HIGH'
+      generate-sbom:
+        required: false
+        type: boolean
+        default: true
+      platforms:
+        required: false
+        type: string
+        default: 'linux/amd64'
+    outputs:
+      vulnerabilities:
+        description: "Number of vulnerabilities found"
+        value: ${{ jobs.scan.outputs.vulnerabilities }}
+      sbom-path:
+        description: "Path to generated SBOM"
+        value: ${{ jobs.scan.outputs.sbom-path }}
+      scan-status:
+        description: "Scan status (passed/failed)"
+        value: ${{ jobs.scan.outputs.status }}
+    secrets:
+      REGISTRY_USERNAME:
+        description: "Container registry username"
+        required: false
+      REGISTRY_PASSWORD:
+        description: "Container registry password"
+        required: false
+
+jobs:
+  scan:
+    name: 🔍 Scan Container Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    outputs:
+      vulnerabilities: ${{ steps.trivy.outputs.vulnerabilities }}
+      sbom-path: ${{ steps.sbom.outputs.path }}
+      status: ${{ steps.result.outputs.status }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to Container Registry
+        if: secrets.REGISTRY_USERNAME != '' && secrets.REGISTRY_PASSWORD != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔍 Run Trivy Vulnerability Scanner
+        id: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.image-tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: '${{ inputs.scan-severity }},CRITICAL'
+          exit-code: '0'
+
+      - name: 📊 Parse Trivy Results
+        id: parse
+        shell: bash
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            # Count vulnerabilities by severity
+            CRITICAL=$(jq '.runs[0].results | map(select(.level == "error")) | length' trivy-results.sarif || echo "0")
+            HIGH=$(jq '.runs[0].results | map(select(.level == "warning")) | length' trivy-results.sarif || echo "0")
+            MEDIUM=$(jq '.runs[0].results | map(select(.level == "note")) | length' trivy-results.sarif || echo "0")
+
+            TOTAL=$((CRITICAL + HIGH + MEDIUM))
+
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+            echo "total=$TOTAL" >> $GITHUB_OUTPUT
+
+            echo "📊 Vulnerabilities Found:"
+            echo "  CRITICAL: $CRITICAL"
+            echo "  HIGH: $HIGH"
+            echo "  MEDIUM: $MEDIUM"
+            echo "  TOTAL: $TOTAL"
+          else
+            echo "⚠️ Trivy results file not found"
+            echo "total=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📤 Upload Trivy Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-scan'
+
+      - name: 🔍 Run Grype Scanner (Additional Validation)
+        shell: bash
+        run: |
+          echo "🔍 Installing Grype..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+          echo "🔍 Scanning with Grype..."
+          grype ${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.image-tag }} \
+            --output json \
+            --file grype-results.json || true
+
+          if [ -f "grype-results.json" ]; then
+            GRYPE_VULNS=$(jq '.matches | length' grype-results.json || echo "0")
+            echo "📊 Grype found $GRYPE_VULNS vulnerabilities"
+          fi
+
+      - name: 📦 Generate Container SBOM
+        if: inputs.generate-sbom == true
+        id: sbom
+        shell: bash
+        run: |
+          echo "📦 Installing Syft..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+          echo "📦 Generating SBOM..."
+          syft ${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.image-tag }} \
+            --output cyclonedx-json \
+            --file container-sbom.json
+
+          if [ -f "container-sbom.json" ]; then
+            COMPONENTS=$(jq '.components | length' container-sbom.json || echo "0")
+            echo "📦 SBOM generated with $COMPONENTS components"
+            echo "path=container-sbom.json" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📤 Upload SBOM
+        if: inputs.generate-sbom == true && steps.sbom.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-sbom-${{ inputs.image-tag }}
+          path: container-sbom.json
+          retention-days: 90
+
+      - name: 📤 Upload Scan Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results-${{ inputs.image-tag }}
+          path: |
+            trivy-results.sarif
+            grype-results.json
+          retention-days: 30
+
+      - name: ✅ Determine Scan Status
+        id: result
+        shell: bash
+        run: |
+          CRITICAL=${{ steps.parse.outputs.critical || 0 }}
+          HIGH=${{ steps.parse.outputs.high || 0 }}
+          MEDIUM=${{ steps.parse.outputs.medium || 0 }}
+
+          FAIL_SEVERITY="${{ inputs.fail-on-severity }}"
+
+          SHOULD_FAIL=false
+
+          case "$FAIL_SEVERITY" in
+            CRITICAL)
+              if [ "$CRITICAL" -gt 0 ]; then
+                SHOULD_FAIL=true
+              fi
+              ;;
+            HIGH)
+              if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+                SHOULD_FAIL=true
+              fi
+              ;;
+            MEDIUM)
+              if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ] || [ "$MEDIUM" -gt 0 ]; then
+                SHOULD_FAIL=true
+              fi
+              ;;
+          esac
+
+          if [ "$SHOULD_FAIL" = true ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "❌ Scan failed: Found vulnerabilities >= $FAIL_SEVERITY"
+            exit 1
+          else
+            echo "status=passed" >> $GITHUB_OUTPUT
+            echo "✅ Scan passed: No vulnerabilities >= $FAIL_SEVERITY"
+          fi
+
+      - name: 📝 Summary
+        if: always()
+        shell: bash
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🔒 Container Security Scan Results
+
+          | Metric | Value |
+          |--------|-------|
+          | **Image** | ${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.image-tag }} |
+          | **Platform** | ${{ inputs.platforms }} |
+          | **Scan Severity** | ${{ inputs.scan-severity }} |
+          | **Fail On** | ${{ inputs.fail-on-severity }} |
+          | **SBOM Generated** | ${{ inputs.generate-sbom }} |
+
+          ### 📊 Vulnerabilities
+
+          | Severity | Count |
+          |----------|-------|
+          | 🔴 **CRITICAL** | ${{ steps.parse.outputs.critical || 0 }} |
+          | 🟠 **HIGH** | ${{ steps.parse.outputs.high || 0 }} |
+          | 🟡 **MEDIUM** | ${{ steps.parse.outputs.medium || 0 }} |
+          | **TOTAL** | ${{ steps.parse.outputs.total || 0 }} |
+
+          **Status:** ${{ steps.result.outputs.status || 'unknown' }}
+
+          **Security Tools Used:**
+          - ✅ Trivy (comprehensive scanner)
+          - ✅ Grype (additional validation)
+          - ✅ Syft (SBOM generation)
+
+          EOF

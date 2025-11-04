@@ -1,0 +1,244 @@
+name: 'TestContainers Integration Testing'
+description: 'Run integration tests with TestContainers support. Supports Docker, Kubernetes, and various databases. Java 11-25 (all LTS)'
+inputs:
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '21'
+  test-profile:
+    description: 'Maven profile or Gradle task for integration tests'
+    required: false
+    default: 'integration-test'
+  containers:
+    description: 'Containers to preload (comma-separated): postgres,mysql,redis,mongodb,elasticsearch,kafka'
+    required: false
+    default: ''
+  docker-login:
+    description: 'Login to Docker Hub to avoid rate limiting'
+    required: false
+    default: 'false'
+  parallel-tests:
+    description: 'Run tests in parallel'
+    required: false
+    default: 'true'
+outputs:
+  test-results:
+    description: 'Test execution results'
+    value: ${{ steps.test.outputs.results }}
+  containers-used:
+    description: 'Containers that were started'
+    value: ${{ steps.containers.outputs.list }}
+runs:
+  using: "composite"
+  steps:
+    - name: 🐳 Setup Docker (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "🐳 Docker is already available on Linux runners"
+        docker --version
+
+    - name: 🐳 Setup Docker (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        echo "🐳 Setting up Docker on macOS..."
+        brew install docker
+        brew install docker-compose
+
+    - name: 🔑 Docker Hub Login
+      if: inputs.docker-login == 'true'
+      shell: bash
+      run: |
+        if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+          echo "🔑 Logging into Docker Hub..."
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        else
+          echo "⚠️ Docker credentials not provided, skipping login"
+        fi
+      env:
+        DOCKER_USERNAME: ${{ env.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ env.DOCKER_PASSWORD }}
+
+    - name: 📦 Preload Container Images
+      if: inputs.containers != ''
+      id: containers
+      shell: bash
+      run: |
+        echo "📦 Preloading container images..."
+        IFS=',' read -ra CONTAINERS <<< "${{ inputs.containers }}"
+
+        CONTAINER_LIST=""
+
+        for container in "${CONTAINERS[@]}"; do
+          container=$(echo "$container" | xargs)  # trim whitespace
+
+          case "$container" in
+            postgres|postgresql)
+              echo "📦 Pulling PostgreSQL..."
+              docker pull postgres:15-alpine
+              CONTAINER_LIST="$CONTAINER_LIST postgres:15-alpine"
+              ;;
+            mysql)
+              echo "📦 Pulling MySQL..."
+              docker pull mysql:8-debian
+              CONTAINER_LIST="$CONTAINER_LIST mysql:8-debian"
+              ;;
+            mariadb)
+              echo "📦 Pulling MariaDB..."
+              docker pull mariadb:11
+              CONTAINER_LIST="$CONTAINER_LIST mariadb:11"
+              ;;
+            redis)
+              echo "📦 Pulling Redis..."
+              docker pull redis:7-alpine
+              CONTAINER_LIST="$CONTAINER_LIST redis:7-alpine"
+              ;;
+            mongodb|mongo)
+              echo "📦 Pulling MongoDB..."
+              docker pull mongo:7
+              CONTAINER_LIST="$CONTAINER_LIST mongo:7"
+              ;;
+            elasticsearch|elastic)
+              echo "📦 Pulling Elasticsearch..."
+              docker pull docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+              CONTAINER_LIST="$CONTAINER_LIST elasticsearch:8.11.0"
+              ;;
+            kafka)
+              echo "📦 Pulling Kafka..."
+              docker pull confluentinc/cp-kafka:7.5.0
+              CONTAINER_LIST="$CONTAINER_LIST kafka:7.5.0"
+              ;;
+            rabbitmq)
+              echo "📦 Pulling RabbitMQ..."
+              docker pull rabbitmq:3-management-alpine
+              CONTAINER_LIST="$CONTAINER_LIST rabbitmq:3-management-alpine"
+              ;;
+            *)
+              echo "⚠️ Unknown container: $container"
+              ;;
+          esac
+        done
+
+        echo "list=$CONTAINER_LIST" >> $GITHUB_OUTPUT
+        echo "✅ Container images preloaded"
+
+    - name: ☕ Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: 'temurin'
+        cache: ${{ inputs.build-tool }}
+
+    - name: 🧪 Run Integration Tests (Maven)
+      if: inputs.build-tool == 'maven'
+      id: test-maven
+      shell: bash
+      run: |
+        echo "🧪 Running integration tests with Maven..."
+
+        MAVEN_OPTS=""
+        if [[ "${{ inputs.parallel-tests }}" == "true" ]]; then
+          MAVEN_OPTS="-T 1C"
+        fi
+
+        ./mvnw verify -P${{ inputs.test-profile }} $MAVEN_OPTS -B
+
+        # Parse results
+        RESULTS_PATH="target/failsafe-reports"
+        TOTAL=0
+        PASSED=0
+        FAILED=0
+
+        if [ -d "$RESULTS_PATH" ]; then
+          for file in "$RESULTS_PATH"/*.xml; do
+            if [ -f "$file" ]; then
+              T=$(grep -o 'tests="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              F=$(grep -o 'failures="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              E=$(grep -o 'errors="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+
+              TOTAL=$((TOTAL + T))
+              FAILED=$((FAILED + F + E))
+            fi
+          done
+          PASSED=$((TOTAL - FAILED))
+        fi
+
+        RESULTS="Total: $TOTAL, Passed: $PASSED, Failed: $FAILED"
+        echo "results=$RESULTS" >> $GITHUB_OUTPUT
+        echo "📊 Integration Test Results: $RESULTS"
+
+    - name: 🧪 Run Integration Tests (Gradle)
+      if: inputs.build-tool == 'gradle'
+      id: test-gradle
+      shell: bash
+      run: |
+        echo "🧪 Running integration tests with Gradle..."
+
+        GRADLE_OPTS=""
+        if [[ "${{ inputs.parallel-tests }}" == "true" ]]; then
+          GRADLE_OPTS="--parallel"
+        fi
+
+        chmod +x ./gradlew
+        ./gradlew ${{ inputs.test-profile }} $GRADLE_OPTS
+
+        # Parse results
+        RESULTS_PATH="build/test-results/integrationTest"
+        TOTAL=0
+        PASSED=0
+        FAILED=0
+
+        if [ -d "$RESULTS_PATH" ]; then
+          for file in "$RESULTS_PATH"/*.xml; do
+            if [ -f "$file" ]; then
+              T=$(grep -o 'tests="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              F=$(grep -o 'failures="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+              E=$(grep -o 'errors="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
+
+              TOTAL=$((TOTAL + T))
+              FAILED=$((FAILED + F + E))
+            fi
+          done
+          PASSED=$((TOTAL - FAILED))
+        fi
+
+        RESULTS="Total: $TOTAL, Passed: $PASSED, Failed: $FAILED"
+        echo "results=$RESULTS" >> $GITHUB_OUTPUT
+        echo "📊 Integration Test Results: $RESULTS"
+
+    - name: 📊 Test Summary
+      if: always()
+      shell: bash
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ### 🐳 TestContainers Integration Tests
+
+        | Metric | Value |
+        |--------|-------|
+        | **Java Version** | ${{ inputs.java-version }} |
+        | **Build Tool** | ${{ inputs.build-tool }} |
+        | **Test Profile** | ${{ inputs.test-profile }} |
+        | **Containers** | ${{ steps.containers.outputs.list || 'None preloaded' }} |
+        | **Parallel** | ${{ inputs.parallel-tests }} |
+        | **Results** | ${{ steps.test-maven.outputs.results || steps.test-gradle.outputs.results || 'N/A' }} |
+
+        **TestContainers Benefits:**
+        - ✅ Real database/service instances
+        - ✅ No mocking required
+        - ✅ Consistent test environment
+        - ✅ Automatic cleanup
+
+        EOF
+
+    - name: 🧹 Cleanup Docker Containers
+      if: always()
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up TestContainers..."
+        docker ps -a --filter "label=org.testcontainers=true" -q | xargs -r docker rm -f || true
+        docker network ls --filter "label=org.testcontainers=true" -q | xargs -r docker network rm || true
+        echo "✅ Cleanup complete"

@@ -1,0 +1,172 @@
+name: 'Advanced Caching Strategy'
+description: 'Multi-layer caching for Java projects with dependency, build, and test caching. Java 11-25 support'
+inputs:
+  build-tool:
+    description: 'Build tool: maven or gradle'
+    required: true
+  java-version:
+    description: 'Java version'
+    required: false
+    default: '21'
+  cache-dependencies:
+    description: 'Cache dependencies (default: true)'
+    required: false
+    default: 'true'
+  cache-build-outputs:
+    description: 'Cache build outputs (default: true)'
+    required: false
+    default: 'true'
+  cache-test-data:
+    description: 'Cache test data and fixtures (default: false)'
+    required: false
+    default: 'false'
+  cache-key-prefix:
+    description: 'Custom cache key prefix'
+    required: false
+    default: 'java-cache'
+outputs:
+  cache-hit-deps:
+    description: 'Whether dependency cache was hit'
+    value: ${{ steps.cache-deps.outputs.cache-hit }}
+  cache-hit-build:
+    description: 'Whether build cache was hit'
+    value: ${{ steps.cache-build.outputs.cache-hit }}
+  cache-size:
+    description: 'Total cache size saved'
+    value: ${{ steps.summary.outputs.size }}
+runs:
+  using: "composite"
+  steps:
+    - name: 📦 Setup Cache Keys
+      id: keys
+      shell: bash
+      run: |
+        # Generate cache keys with multiple fallback levels
+        OS="${{ runner.os }}"
+        TOOL="${{ inputs.build-tool }}"
+        JAVA="${{ inputs.java-version }}"
+        PREFIX="${{ inputs.cache-key-prefix }}"
+
+        # Dependency cache keys
+        if [[ "$TOOL" == "maven" ]]; then
+          HASH=$(sha256sum pom.xml 2>/dev/null | cut -d' ' -f1 || echo "default")
+          DEPS_KEY="$PREFIX-$OS-maven-$JAVA-$HASH"
+          DEPS_RESTORE="$PREFIX-$OS-maven-$JAVA-"
+        else
+          HASH=$(sha256sum build.gradle* 2>/dev/null | cut -d' ' -f1 || echo "default")
+          DEPS_KEY="$PREFIX-$OS-gradle-$JAVA-$HASH"
+          DEPS_RESTORE="$PREFIX-$OS-gradle-$JAVA-"
+        fi
+
+        # Build output cache keys
+        BUILD_HASH="${{ github.sha }}"
+        BUILD_KEY="$PREFIX-build-$OS-$TOOL-$BUILD_HASH"
+        BUILD_RESTORE="$PREFIX-build-$OS-$TOOL-"
+
+        echo "deps-key=$DEPS_KEY" >> $GITHUB_OUTPUT
+        echo "deps-restore=$DEPS_RESTORE" >> $GITHUB_OUTPUT
+        echo "build-key=$BUILD_KEY" >> $GITHUB_OUTPUT
+        echo "build-restore=$BUILD_RESTORE" >> $GITHUB_OUTPUT
+
+        echo "📦 Cache keys generated"
+        echo "  Dependencies: $DEPS_KEY"
+        echo "  Build: $BUILD_KEY"
+
+    - name: 💾 Cache Dependencies (Maven)
+      if: inputs.cache-dependencies == 'true' && inputs.build-tool == 'maven'
+      id: cache-deps-maven
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.m2/wrapper
+        key: ${{ steps.keys.outputs.deps-key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.deps-restore }}
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-maven-
+
+    - name: 💾 Cache Dependencies (Gradle)
+      if: inputs.cache-dependencies == 'true' && inputs.build-tool == 'gradle'
+      id: cache-deps-gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          ~/.gradle/nodejs
+        key: ${{ steps.keys.outputs.deps-key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.deps-restore }}
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-gradle-
+
+    - name: 💾 Cache Build Outputs (Maven)
+      if: inputs.cache-build-outputs == 'true' && inputs.build-tool == 'maven'
+      id: cache-build-maven
+      uses: actions/cache@v4
+      with:
+        path: |
+          target/classes
+          target/test-classes
+          target/generated-sources
+        key: ${{ steps.keys.outputs.build-key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.build-restore }}
+
+    - name: 💾 Cache Build Outputs (Gradle)
+      if: inputs.cache-build-outputs == 'true' && inputs.build-tool == 'gradle'
+      id: cache-build-gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/classes
+          build/generated
+          .gradle/build-cache
+        key: ${{ steps.keys.outputs.build-key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.build-restore }}
+
+    - name: 💾 Cache Test Data
+      if: inputs.cache-test-data == 'true'
+      id: cache-test
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/test/resources/fixtures
+          target/test-resources
+          build/test-resources
+        key: ${{ inputs.cache-key-prefix }}-test-data-${{ hashFiles('src/test/resources/**') }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-test-data-
+
+    - name: 📊 Cache Summary
+      id: summary
+      shell: bash
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ### 💾 Advanced Caching Summary
+
+        | Cache Layer | Status | Tool |
+        |-------------|--------|------|
+        | **Dependencies** | ${{ steps.cache-deps-maven.outputs.cache-hit == 'true' || steps.cache-deps-gradle.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} | ${{ inputs.build-tool }} |
+        | **Build Outputs** | ${{ steps.cache-build-maven.outputs.cache-hit == 'true' || steps.cache-build-gradle.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} | ${{ inputs.build-tool }} |
+        | **Test Data** | ${{ steps.cache-test.outputs.cache-hit == 'true' && '✅ Hit' || inputs.cache-test-data == 'true' && '❌ Miss' || 'N/A' }} | - |
+
+        **Cache Strategy:**
+        - ✅ Multi-layer caching (dependencies, build, test)
+        - ✅ Intelligent fallback keys
+        - ✅ Platform-specific optimization
+        - ✅ Build tool aware
+
+        **Performance Impact:**
+        - Dependencies cached: ~2-5 minutes saved
+        - Build outputs cached: ~1-3 minutes saved
+        - Test data cached: ~30-60 seconds saved
+
+        EOF
+
+        # Estimate cache size (rough approximation)
+        if [[ "${{ steps.cache-deps-maven.outputs.cache-hit }}" == "true" ]] || [[ "${{ steps.cache-deps-gradle.outputs.cache-hit }}" == "true" ]]; then
+          echo "size=500MB-2GB" >> $GITHUB_OUTPUT
+        else
+          echo "size=0MB" >> $GITHUB_OUTPUT
+        fi

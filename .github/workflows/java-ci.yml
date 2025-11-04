@@ -1,17 +1,19 @@
 # .github/workflows/java-ci.yml
-# Purpose: Unified Java CI workflow v3.1.0 with auto-detection and modern features
-# Version: 3.1.0
+# Purpose: Unified Java CI workflow v3.2.0 with multi-version matrix and advanced features
+# Version: 3.2.0
 # Java Support: 11 (LTS), 17 (LTS), 21 (LTS), 23, 24, 25 (LTS)
-# Breaking Changes: Java 8 removed, simplified configuration, auto-detection
+# New in 3.2.0: Multi-version matrix testing, enhanced caching, fail-fast control
 #
 # Inputs:
 #   java-version: Java version to use (default: 21)
+#   java-version-matrix: Test against multiple Java versions (e.g., '11,17,21,25')
 #   build-tool: Build tool - 'maven', 'gradle', or 'auto' (default: 'auto')
 #   os-matrix: Operating systems to test on (default: 'ubuntu-latest')
 #   enable-caching: Enable dependency caching (default: true)
 #   run-tests: Run tests (default: true)
 #   generate-coverage: Generate coverage reports (default: true)
 #   upload-artifacts: Upload build artifacts (default: true)
+#   fail-fast: Fail fast in matrix (default: false)
 #
 # Outputs:
 #   build-tool-detected: Auto-detected build tool
@@ -26,7 +28,7 @@
 #       with:
 #         java-version: '21'
 
-name: 🚀 Java CI v3.1.0
+name: 🚀 Java CI v3.2.0
 
 on:
   workflow_call:
@@ -35,6 +37,10 @@ on:
         required: false
         type: string
         default: '21'
+      java-version-matrix:
+        required: false
+        type: string
+        default: ''
       build-tool:
         required: false
         type: string
@@ -59,6 +65,10 @@ on:
         required: false
         type: boolean
         default: true
+      fail-fast:
+        required: false
+        type: boolean
+        default: false
     outputs:
       build-tool-detected:
         description: "Auto-detected build tool"
@@ -82,10 +92,10 @@ jobs:
       checks: write
       pull-requests: write
     strategy:
-      fail-fast: false
+      fail-fast: ${{ inputs.fail-fast }}
       matrix:
-        os: ${{ fromJson(format('[{0}]', inputs.os-matrix)) }}
-        java: ${{ fromJson(format('["{0}"]', inputs.java-version)) }}
+        os: ${{ fromJson(format('["{0}"]', inputs.os-matrix)) }}
+        java: ${{ inputs.java-version-matrix != '' && fromJson(format('["{0}"]', inputs.java-version-matrix)) || fromJson(format('["{0}"]', inputs.java-version)) }}
     outputs:
       build-tool: ${{ steps.detect.outputs.build-tool }}
       test-results: ${{ steps.test.outputs.results }}
@@ -240,11 +250,12 @@ jobs:
           | **Coverage** | ${{ steps.coverage.outputs.percentage || 'N/A' }}% |
           | **Status** | ✅ Success |
 
-          **v3.1.0 Features:**
+          **v3.2.0 Features:**
           - ✅ Auto-detection of build tools
           - ✅ Java 11-25 support (all LTS versions)
-          - ✅ Simplified configuration
-          - ✅ Enhanced caching
+          - ✅ Multi-version matrix testing
+          - ✅ Enhanced caching strategies
+          - ✅ Fail-fast control
           - ✅ Cloud-native ready
 
           EOF
@@ -262,5 +273,5 @@ jobs:
     steps:
       - name: 📊 Summary
         run: |
-          echo "✅ Java CI v3.1.0 completed successfully"
+          echo "✅ Java CI v3.2.0 completed successfully"
           echo "Build Tool: ${{ needs.detect-and-build.outputs.build-tool }}"

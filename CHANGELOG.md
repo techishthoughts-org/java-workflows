@@ -1,3 +1,42 @@
+# 🚀 Release v3.3.0
+
+**Release Date**: 2025-11-07
+
+## 🐛 Bug Fixes
+- fix: handle changelog content safely (86ba311)
+- fix: make jmh action yaml-safe (d553aa6)
+- fix: hardcoded secret scan noise (7a5c324)
+
+## 🔧 Maintenance
+- ci: add pre-merge validators (51050d4)
+- chore: align workflows and docs with java 25 (947dc7b)
+
+## 📦 Workflow Files Changed
+
+- `.github/actions/advanced-cache/action.yml`
+- `.github/actions/artifact-publish/action.yml`
+- `.github/actions/jmh-benchmark/action.yml`
+- `.github/actions/native-image-build/action.yml`
+- `.github/actions/setup-java-maven/action.yml`
+- `.github/actions/testcontainers-test/action.yml`
+- `.github/workflows/auto-tag-enhanced.yml`
+- `.github/workflows/ci-security.yml`
+- `.github/workflows/java-ci-secure.yml`
+- `.github/workflows/java-ci-universal.yml`
+- `.github/workflows/java-ci.yml`
+- `.github/workflows/pre-merge-validators.yml`
+- `.github/workflows/release-workflows.yml`
+- `.github/workflows/test-workflows.yml`
+
+## 🔗 Links
+
+- **Full Changelog**: https://github.com/techishthoughts-org/java-workflows/compare/v3...v3.3.0
+- **Documentation**: https://github.com/techishthoughts-org/java-workflows/blob/v3.3.0/README.md
+
+---
+
+**🤖 This release was automatically created by GitHub Actions**
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

@@ -1,3 +1,23 @@
+# 🚀 Release v3.5.0
+
+**Release Date**: 2025-11-07
+
+## 🔧 Maintenance
+- chore: set release title to tag (1a23afa)
+
+## 📦 Workflow Files Changed
+
+- `.github/workflows/release-workflows.yml`
+
+## 🔗 Links
+
+- **Full Changelog**: https://github.com/techishthoughts-org/java-workflows/compare/v3.4.0...v3.5.0
+- **Documentation**: https://github.com/techishthoughts-org/java-workflows/blob/v3.5.0/README.md
+
+---
+
+**🤖 This release was automatically created by GitHub Actions**
+
 # 🚀 Release v3.4.0
 
 **Release Date**: 2025-11-07

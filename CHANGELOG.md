@@ -1,3 +1,37 @@
+# 🚀 Release v3.7.0
+
+**Release Date**: 2025-11-07
+
+## 🔧 Maintenance
+- chore(deps): bump actions/setup-java from 4 to 5 (#14) (48f482d)
+- chore(deps): bump azure/setup-kubectl from 3 to 4 (#12) (f9a7469)
+- chore(deps): bump dorny/test-reporter from 1.9.1 to 2.1.1 (#11) (7e23667)
+- chore(deps): bump dependabot/fetch-metadata from 1.6.0 to 2.4.0 (#9) (ad1e0fc)
+- chore(deps): bump org.jacoco:jacoco-maven-plugin from 0.8.12 to 0.8.14 (#8) (f81df2a)
+- chore(deps): bump github/codeql-action from 3 to 4 (#7) (eaa7644)
+- chore(deps-dev): bump org.junit.jupiter:junit-jupiter (#5) (0d3b420)
+- chore(deps): bump google-github-actions/get-gke-credentials from 2 to 3 (#4) (793f638)
+- chore(deps): bump azure/aks-set-context from 3 to 4 (#2) (6f24c83)
+
+## 📦 Workflow Files Changed
+
+- `.github/workflows/ci-security.yml`
+- `.github/workflows/container-scan.yml`
+- `.github/workflows/dependabot-auto-merge-enhanced.yml`
+- `.github/workflows/java-ci-secure.yml`
+- `.github/workflows/java-ci-universal.yml`
+- `.github/workflows/java-ci.yml`
+- `.github/workflows/k8s-deploy.yml`
+
+## 🔗 Links
+
+- **Full Changelog**: https://github.com/techishthoughts-org/java-workflows/compare/v3.6.0...v3.7.0
+- **Documentation**: https://github.com/techishthoughts-org/java-workflows/blob/v3.7.0/README.md
+
+---
+
+**🤖 This release was automatically created by GitHub Actions**
+
 # 🚀 Release v3.6.0
 
 **Release Date**: 2025-11-07

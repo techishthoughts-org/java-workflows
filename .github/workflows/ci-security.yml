@@ -3,7 +3,7 @@
 # Version: 1.0.0
 # Features: SAST (CodeQL), SCA (Dependency-Check, Snyk, Trivy), Secret Scanning
 # Inputs:
-#   java-version: Java version to use (default: 21)
+#   java-version: Java version to use (default: 25)
 #   build-tool: Build tool - 'maven' or 'gradle' (default: 'maven')
 #   gradle-version: Gradle version when using Gradle (default: '8.5')
 #   enable-codeql: Enable CodeQL SAST scanning (default: true)
@@ -26,7 +26,7 @@
 #     security:
 #       uses: org/workflows/.github/workflows/ci-security.yml@v1.0.0
 #       with:
-#         java-version: '21'
+#         java-version: '25'
 #         build-tool: 'maven'
 #         enable-snyk: true
 #         fail-on-severity: 'critical'
@@ -41,7 +41,7 @@ on:
       java-version:
         required: false
         type: string
-        default: '21'
+        default: '25'
       build-tool:
         required: false
         type: string
@@ -120,8 +120,8 @@ jobs:
           FAIL_ON_SEVERITY="${{ inputs.fail-on-severity }}"
 
           # Validate Java version
-          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22|23)$ ]]; then
-            echo "❌ Invalid Java version: $JAVA_VERSION. Supported: 8, 11, 17, 21, 22, 23"
+          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22|23|25)$ ]]; then
+            echo "❌ Invalid Java version: $JAVA_VERSION. Supported: 8, 11, 17, 21, 22, 23, 25"
             exit 1
           fi
 

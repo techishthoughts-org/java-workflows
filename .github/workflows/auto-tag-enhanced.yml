@@ -1,7 +1,7 @@
 # .github/workflows/auto-tag-enhanced.yml
 # Purpose: Enhanced auto-tagging with comprehensive outputs and error handling.
 # Inputs:
-#   java-version: Java version (default: 21)
+#   java-version: Java version (default: 25)
 #   artifact-name: Name of the built artifact (default: 'app')
 #   build-docker: Whether to build Docker image (default: true)
 #   run-tests: Whether to run tests before tagging (default: true)
@@ -47,7 +47,7 @@ on:
       java-version:
         required: false
         type: string
-        default: '21'
+        default: '25'
       artifact-name:
         required: false
         type: string
@@ -130,7 +130,7 @@ jobs:
           ARTIFACT_NAME="${{ inputs.artifact-name }}"
 
           # Validate Java version
-          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22)$ ]]; then
+          if [[ ! "$JAVA_VERSION" =~ ^(8|11|17|21|22|25)$ ]]; then
             echo "❌ Invalid Java version: $JAVA_VERSION"
             exit 1
           fi
@@ -195,13 +195,23 @@ jobs:
         if: inputs.run-tests
         run: |
           echo "🧪 Running comprehensive tests..."
-          ./mvnw clean verify -B -Dmaven.test.failure.ignore=false
+          MAVEN_CMD="./mvnw"
+          if [ ! -x "$MAVEN_CMD" ]; then
+            MAVEN_CMD="mvn"
+          fi
+
+          "$MAVEN_CMD" clean verify -B -Dmaven.test.failure.ignore=false
           echo "✅ All tests passed"
 
       - name: 📄 Get project version from pom.xml
         id: project-version
         run: |
-          VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          MAVEN_CMD="./mvnw"
+          if [ ! -x "$MAVEN_CMD" ]; then
+            MAVEN_CMD="mvn"
+          fi
+
+          VERSION=$("$MAVEN_CMD" help:evaluate -Dexpression=project.version -q -DforceStdout)
           TAG_NAME="v$VERSION"
 
           # Validate version format
@@ -285,7 +295,12 @@ jobs:
         if: steps.check-tag.outputs.exists == 'false'
         run: |
           echo "🏗️ Building application package..."
-          ./mvnw clean package -DskipTests -B -Dmaven.javadoc.skip=true
+          MAVEN_CMD="./mvnw"
+          if [ ! -x "$MAVEN_CMD" ]; then
+            MAVEN_CMD="mvn"
+          fi
+
+          "$MAVEN_CMD" clean package -DskipTests -B -Dmaven.javadoc.skip=true
 
           # Verify JAR was created
           JAR_FILE="target/${{ inputs.artifact-name }}-${{ steps.project-version.outputs.version }}.jar"
@@ -363,7 +378,12 @@ jobs:
 
       - name: 📦 Build application for Docker
         run: |
-          ./mvnw clean package -DskipTests -B
+          MAVEN_CMD="./mvnw"
+          if [ ! -x "$MAVEN_CMD" ]; then
+            MAVEN_CMD="mvn"
+          fi
+
+          "$MAVEN_CMD" clean package -DskipTests -B
           echo "✅ Application built for Docker"
 
       - name: 🐳 Build and push Docker image

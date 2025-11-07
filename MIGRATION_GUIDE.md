@@ -38,7 +38,7 @@ jobs:
   test:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'          # Can now use Java 23!
+      java-version: '25'          # Can now use Java 25!
       build-tool: 'maven'         # NEW: Required in v2.x
       maven-opts: '-Xmx4g'
 ```
@@ -116,7 +116,7 @@ jobs:
   unit-tests:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'              # Updated to latest LTS
+      java-version: '25'              # Updated to latest LTS
       build-tool: 'maven'             # NEW: Required
       maven-opts: '-Xmx2g'
       test-pattern: '**/unit/**'
@@ -130,7 +130,7 @@ jobs:
     needs: [unit-tests]
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       enable-codeql: true
       enable-dependency-check: true
@@ -189,7 +189,7 @@ jobs:
   security:
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       enable-codeql: true
       enable-dependency-check: true
@@ -224,7 +224,7 @@ jobs:
   test:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'gradle'        # Changed from maven
       gradle-version: '8.5'       # Optional
 ```
@@ -237,7 +237,7 @@ jobs:
 
 | v1.0.0 Input | v2.1.0 Input | Status | Notes |
 |--------------|--------------|--------|-------|
-| `java-version` | `java-version` | ✅ Same | Now supports Java 23 |
+| `java-version` | `java-version` | ✅ Same | Now supports Java 25 |
 | `maven-opts` | `maven-opts` | ✅ Same | Still works identically |
 | `test-pattern` | `test-pattern` | ✅ Same | Works for Maven & Gradle |
 | `os-matrix` | `os-matrix` | ✅ Same | No changes |
@@ -380,7 +380,7 @@ jobs:
   test:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
 ```
 
@@ -410,7 +410,7 @@ jobs:
   test:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       maven-opts: '-Xmx4g -XX:+UseG1GC'
       test-pattern: '**/integration/**'
@@ -441,14 +441,14 @@ jobs:
   test:
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
 
   security:
     needs: [test]
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       enable-codeql: true
       enable-dependency-check: true

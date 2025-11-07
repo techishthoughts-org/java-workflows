@@ -35,7 +35,7 @@ jobs:
           build-tool: 'maven'
           publish-target: 'maven-central'
           artifact-version: ${{ github.event.release.tag_name || inputs.version }}
-          java-version: '21'
+          java-version: '25'
           skip-tests: false
           gpg-sign: true  # REQUIRED for Maven Central
           dry-run: ${{ inputs.dry-run || false }}

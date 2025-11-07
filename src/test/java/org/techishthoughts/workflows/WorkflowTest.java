@@ -21,7 +21,7 @@ class WorkflowTest {
     void shouldHandleStringOperations() {
         String testString = "Hello, Workflows!";
         assertNotNull(testString);
-        assertEquals(16, testString.length());
+        assertEquals(17, testString.length());
         assertTrue(testString.contains("Workflows"));
     }
 

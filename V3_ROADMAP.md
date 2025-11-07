@@ -38,7 +38,7 @@
 # Before v3.0.0: Upgrade to Java 11 or later
 java-version: '11'  # Minimum
 java-version: '17'  # Recommended
-java-version: '21'  # Latest LTS
+java-version: '25'  # Latest LTS
 ```
 
 ---
@@ -69,16 +69,17 @@ uses: org/workflows/.github/workflows/java-ci.yml@v3
 ---
 
 ### 3. **Default Java Version Change** ⚠️ BREAKING
-**Current Default:** Java 21
+**Current Default:** Java 25 (LTS)
 **v3.0.0 Default:** Java 21 (LTS)
-**Future (v3.1+):** Will track latest LTS
+**v3.2.0+ Default:** Java 25 (LTS)
+**Future:** Continues to track the newest LTS after evaluation
 
 **Rationale:**
 - Users should explicitly specify Java version
 - Avoid unexpected upgrades
 
 **Impact:**
-- Users not specifying `java-version` will get Java 21
+- Users not specifying `java-version` will now get Java 25
 - Recommendation: Always specify `java-version`
 
 ---
@@ -95,7 +96,7 @@ uses: org/workflows/.github/workflows/java-ci.yml@v3
 ```yaml
 # v3.0.0: build-tool auto-detected
 with:
-  java-version: '21'
+  java-version: '25'
   # build-tool not needed (auto-detected)
 ```
 
@@ -243,7 +244,7 @@ jobs:
   test:
     uses: org/workflows/.github/workflows/java-ci-universal.yml@v2
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       os-matrix: 'ubuntu-latest'
 ```
@@ -255,7 +256,7 @@ jobs:
   test:
     uses: org/workflows/.github/workflows/java-ci.yml@v3
     with:
-      java-version: '21'  # Only thing you need to specify!
+      java-version: '25'  # Only thing you need to specify!
 
   # Optional: Deploy to Kubernetes
   deploy:

@@ -2,9 +2,9 @@ name: 'GraalVM Native Image Build'
 description: 'Build native executables using GraalVM Native Image for fast startup and low memory usage'
 inputs:
   java-version:
-    description: 'Java version to use (17, 21, 23)'
+    description: 'Java version to use (17, 21, 23, 25)'
     required: false
-    default: '21'
+    default: '25'
   graalvm-version:
     description: 'GraalVM version to use'
     required: false

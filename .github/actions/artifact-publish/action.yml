@@ -13,7 +13,7 @@ inputs:
   java-version:
     description: 'Java version to use for building'
     required: false
-    default: '21'
+    default: '25'
   repository-url:
     description: 'Repository URL (for nexus, artifactory, or custom repos)'
     required: false

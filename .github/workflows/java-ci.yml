@@ -5,7 +5,7 @@
 # New in 3.2.0: Multi-version matrix testing, enhanced caching, fail-fast control
 #
 # Inputs:
-#   java-version: Java version to use (default: 21)
+#   java-version: Java version to use (default: 25)
 #   java-version-matrix: Test against multiple Java versions (e.g., '11,17,21,25')
 #   build-tool: Build tool - 'maven', 'gradle', or 'auto' (default: 'auto')
 #   os-matrix: Operating systems to test on (default: 'ubuntu-latest')
@@ -26,7 +26,7 @@
 #     ci:
 #       uses: org/workflows/.github/workflows/java-ci.yml@v3
 #       with:
-#         java-version: '21'
+#         java-version: '25'
 
 name: 🚀 Java CI v3.2.0
 
@@ -36,7 +36,7 @@ on:
       java-version:
         required: false
         type: string
-        default: '21'
+        default: '25'
       java-version-matrix:
         required: false
         type: string
@@ -100,7 +100,7 @@ jobs:
       build-tool: ${{ steps.detect.outputs.build-tool }}
       test-results: ${{ steps.test.outputs.results }}
       coverage-percentage: ${{ steps.coverage.outputs.percentage }}
-      build-status: ${{ steps.build.outputs.status }}
+      build-status: ${{ steps.build-status.outputs.status }}
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -143,7 +143,12 @@ jobs:
         shell: bash
         run: |
           echo "🔨 Building with Maven..."
-          ./mvnw clean package -DskipTests -B
+          MAVEN_CMD="./mvnw"
+          if [ ! -x "$MAVEN_CMD" ]; then
+            MAVEN_CMD="mvn"
+          fi
+
+          "$MAVEN_CMD" clean package -DskipTests -B
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 🔨 Build with Gradle
@@ -152,9 +157,25 @@ jobs:
         shell: bash
         run: |
           echo "🔨 Building with Gradle..."
-          chmod +x ./gradlew
-          ./gradlew clean build -x test
+          if [ -x "./gradlew" ]; then
+            chmod +x ./gradlew
+            GRADLE_CMD="./gradlew"
+          else
+            GRADLE_CMD="gradle"
+          fi
+
+          "$GRADLE_CMD" clean build -x test
           echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 📈 Capture build status
+        id: build-status
+        shell: bash
+        run: |
+          STATUS="${{ steps.build-maven.outputs.status || steps.build-gradle.outputs.status || '' }}"
+          if [ -z "$STATUS" ]; then
+            STATUS="skipped"
+          fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
       - name: 🧪 Run Tests
         if: inputs.run-tests == true
@@ -166,10 +187,22 @@ jobs:
           echo "🧪 Running tests with $BUILD_TOOL..."
 
           if [[ "$BUILD_TOOL" == "maven" ]]; then
-            ./mvnw test -B
+            MAVEN_CMD="./mvnw"
+            if [ ! -x "$MAVEN_CMD" ]; then
+              MAVEN_CMD="mvn"
+            fi
+
+            "$MAVEN_CMD" test -B
             RESULTS_PATH="target/surefire-reports"
           else
-            ./gradlew test
+            if [ -x "./gradlew" ]; then
+              chmod +x ./gradlew
+              GRADLE_TEST_CMD="./gradlew"
+            else
+              GRADLE_TEST_CMD="gradle"
+            fi
+
+            "$GRADLE_TEST_CMD" test
             RESULTS_PATH="build/test-results/test"
           fi
 
@@ -207,10 +240,22 @@ jobs:
           echo "📊 Generating coverage report..."
 
           if [[ "$BUILD_TOOL" == "maven" ]]; then
-            ./mvnw jacoco:report -B
+            MAVEN_CMD="./mvnw"
+            if [ ! -x "$MAVEN_CMD" ]; then
+              MAVEN_CMD="mvn"
+            fi
+
+            "$MAVEN_CMD" jacoco:report -B
             COVERAGE_FILE="target/site/jacoco/index.html"
           else
-            ./gradlew jacocoTestReport
+            if [ -x "./gradlew" ]; then
+              chmod +x ./gradlew
+              GRADLE_COVERAGE_CMD="./gradlew"
+            else
+              GRADLE_COVERAGE_CMD="gradle"
+            fi
+
+            "$GRADLE_COVERAGE_CMD" jacocoTestReport
             COVERAGE_FILE="build/reports/jacoco/test/html/index.html"
           fi
 
@@ -239,7 +284,7 @@ jobs:
         shell: bash
         run: |
           cat >> $GITHUB_STEP_SUMMARY <<EOF
-          ### 🚀 Java CI v3.1.0 Summary
+          ### 🚀 Java CI v3.2.0 Summary
 
           | Metric | Value |
           |--------|-------|
@@ -248,7 +293,7 @@ jobs:
           | **OS** | ${{ matrix.os }} |
           | **Tests** | ${{ steps.test.outputs.results || 'Skipped' }} |
           | **Coverage** | ${{ steps.coverage.outputs.percentage || 'N/A' }}% |
-          | **Status** | ✅ Success |
+          | **Status** | ${{ steps.build-status.outputs.status }} |
 
           **v3.2.0 Features:**
           - ✅ Auto-detection of build tools

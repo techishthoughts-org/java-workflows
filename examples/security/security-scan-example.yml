@@ -19,7 +19,7 @@ jobs:
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
       # Java configuration
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'  # or 'gradle'
       gradle-version: '8.5'  # Only needed for Gradle projects
 

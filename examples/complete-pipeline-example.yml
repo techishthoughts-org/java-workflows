@@ -22,7 +22,7 @@ jobs:
     name: 🔨 Build & Test
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'  # or 'gradle'
       os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
       coverage-tool: 'jacoco'
@@ -38,7 +38,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
       enable-codeql: true
       enable-dependency-check: true
@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ['11', '17', '21', '23']
+        java: ['11', '17', '21', '25']
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -96,7 +96,7 @@ jobs:
       - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
 
@@ -128,7 +128,7 @@ jobs:
       - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
 
@@ -166,7 +166,7 @@ jobs:
           build-tool: 'maven'
           publish-target: 'github'
           artifact-version: ${{ github.event.release.tag_name }}
-          java-version: '21'
+          java-version: '25'
           skip-tests: false
           gpg-sign: false
         env:
@@ -180,7 +180,7 @@ jobs:
           build-tool: 'maven'
           publish-target: 'maven-central'
           artifact-version: ${{ github.event.release.tag_name }}
-          java-version: '21'
+          java-version: '25'
           skip-tests: true  # Already tested
           gpg-sign: true
         env:

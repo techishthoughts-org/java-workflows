@@ -16,7 +16,7 @@ jobs:
   test:
     uses: your-username/java-workflows/.github/workflows/java-ci-secure.yml@v1.0.0
     with:
-      java-version: '21'
+      java-version: '25'
       os-matrix: 'ubuntu-latest,windows-latest'
       notify-on-failure: true
     secrets:
@@ -102,7 +102,7 @@ steps:
   - uses: actions/checkout@v4
   - uses: your-username/java-workflows/.github/actions/setup-java-maven@v1.0.0
     with:
-      java-version: '21'
+      java-version: '25'
       maven-version: '3.8.8'
 ```
 
@@ -131,7 +131,7 @@ steps:
 ## 📋 Configuration Options
 
 ### Java CI Workflow
-- `java-version`: Java version (8, 11, 17, 21, 22)
+- `java-version`: Java version (8, 11, 17, 21, 23, 25)
 - `os-matrix`: Operating systems to test on
 - `maven-opts`: Maven JVM options
 - `test-pattern`: Test pattern for Maven

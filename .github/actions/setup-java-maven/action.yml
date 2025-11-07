@@ -8,6 +8,10 @@ inputs:
     description: 'Maven version to use'
     required: false
     default: '3.8.8'
+  maven-opts:
+    description: 'Additional options exported to MAVEN_OPTS'
+    required: false
+    default: ''
 runs:
   using: "composite"
   steps:
@@ -17,4 +21,11 @@ runs:
         distribution: 'temurin'
         cache: 'maven'
     - name: Set up Maven
-      run: echo "Maven ${{ inputs.maven-version }} setup"
+      shell: bash
+      run: |
+        echo "Using Maven version option: ${{ inputs.maven-version }}"
+        if [ -n "${{ inputs.maven-opts }}" ]; then
+          echo "Exporting MAVEN_OPTS=${{ inputs.maven-opts }}"
+          echo "MAVEN_OPTS=${{ inputs.maven-opts }}" >> "$GITHUB_ENV"
+        fi
+        echo "Maven toolchain ready"

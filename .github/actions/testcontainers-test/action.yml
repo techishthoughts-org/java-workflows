@@ -7,7 +7,7 @@ inputs:
   java-version:
     description: 'Java version to use'
     required: false
-    default: '21'
+    default: '25'
   test-profile:
     description: 'Maven profile or Gradle task for integration tests'
     required: false

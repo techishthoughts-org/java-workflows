@@ -15,7 +15,7 @@ jobs:
     name: 🔨 Build & Test
     uses: techishthoughts-org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'gradle'
       gradle-version: '8.5'
       os-matrix: 'ubuntu-latest,windows-latest,macos-latest'
@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java-version: ['17', '21', '23']
+        java-version: ['17', '21', '25']
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -91,7 +91,7 @@ jobs:
     needs: [build-and-test]
     uses: techishthoughts-org/workflows/.github/workflows/ci-security.yml@v2.1.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'gradle'
       gradle-version: '8.5'
       enable-codeql: true

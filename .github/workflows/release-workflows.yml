@@ -237,11 +237,17 @@ $commit"
             echo "- No workflow files changed" >> CHANGELOG_NEW.md
           fi
 
+          if [ -n "$LAST_TAG" ]; then
+            FULL_CHANGELOG_URL="https://github.com/${{ github.repository }}/compare/$LAST_TAG...v$NEXT_VERSION"
+          else
+            FULL_CHANGELOG_URL="https://github.com/${{ github.repository }}/tree/v$NEXT_VERSION"
+          fi
+
           cat >> CHANGELOG_NEW.md << EOF
 
           ## 🔗 Links
 
-          - **Full Changelog**: https://github.com/${{ github.repository }}/compare/$LAST_TAG...v$NEXT_VERSION
+          - **Full Changelog**: $FULL_CHANGELOG_URL
           - **Documentation**: https://github.com/${{ github.repository }}/blob/v$NEXT_VERSION/README.md
 
           ---
@@ -272,7 +278,7 @@ $commit"
             ci:
               uses: ${{ github.repository }}/.github/workflows/java-ci-secure.yml@v$NEXT_VERSION
               with:
-                java-version: '21'
+                java-version: '25'
           \`\`\`
 
           ## 📚 Available Workflows
@@ -342,12 +348,12 @@ $commit"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add VERSION CHANGELOG.md
-          git commit -m "🚀 Release $TAG_NAME
 
-          - Updated VERSION to $NEXT_VERSION
-          - Updated CHANGELOG.md with release notes
-
-          [skip ci]"
+          if git diff --cached --quiet; then
+            echo "ℹ️ No documentation updates detected; skipping commit"
+          else
+            git commit -m "chore: release $TAG_NAME" -m "Update VERSION and CHANGELOG [skip ci]"
+          fi
 
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
           git push origin main
@@ -378,6 +384,11 @@ $commit"
         with:
           ref: ${{ needs.create-release.outputs.tag-name }}
 
+      - name: 🛠️ Install YAML tooling
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --quiet pyyaml
+
       - name: ✅ Validate workflows at tag
         run: |
           echo "✅ Validating workflows at tag ${{ needs.create-release.outputs.tag-name }}"
@@ -385,7 +396,7 @@ $commit"
           # Check that all workflow files are valid YAML
           find .github/workflows/ -name "*.yml" -o -name "*.yaml" | while read -r file; do
             echo "📝 Validating $file"
-            python -c "import yaml; yaml.safe_load(open('$file'))" || {
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" || {
               echo "❌ Invalid YAML in $file"
               exit 1
             }

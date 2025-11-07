@@ -11,7 +11,7 @@
 | **Java 8** | ✅ Supported | ❌ Removed | Must upgrade to Java 11+ |
 | **Workflow File** | `java-ci-universal.yml` | `java-ci.yml` | Update workflow reference |
 | **build-tool Input** | Required | Optional (auto-detect) | Can remove input |
-| **Default Java** | 21 | 21 (explicit) | Recommend explicit version |
+| **Default Java** | 21 | 25 (explicit) | Recommend explicit version |
 
 ---
 
@@ -23,7 +23,7 @@ jobs:
   ci:
     uses: org/workflows/.github/workflows/java-ci-universal.yml@v2
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'
 ```
 
@@ -33,7 +33,7 @@ jobs:
   ci:
     uses: org/workflows/.github/workflows/java-ci.yml@v3
     with:
-      java-version: '21'
+      java-version: '25'
       # build-tool auto-detected!
 ```
 
@@ -57,7 +57,7 @@ If you're using Java 8:
 **Option 2: Upgrade to Java 11+**
 ```yaml
 # Upgrade Java version
-java-version: '11'  # or 17, 21
+java-version: '11'  # or 17, 21, 25
 ```
 
 ---
@@ -71,7 +71,7 @@ jobs:
   ci:
     uses: org/workflows/.github/workflows/java-ci.yml@v3
     with:
-      java-version: '21'
+      java-version: '25'
       # That's it! Everything else is auto-detected
 ```
 

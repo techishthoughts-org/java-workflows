@@ -276,7 +276,7 @@ with:
 # After (v2.1.0)
 uses: org/workflows/.github/workflows/java-ci-universal.yml@v2.1.0
 with:
-  java-version: '21'          # Can now use Java 23!
+  java-version: '25'          # Can now use Java 25!
   build-tool: 'maven'         # or 'gradle'
   maven-opts: '-Xmx4g'
 ```

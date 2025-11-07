@@ -8,7 +8,7 @@ jobs:
   test:
     uses: your-username/java-workflows/.github/workflows/java-ci-universal.yml@v2.0.0
     with:
-      java-version: '21'
+      java-version: '25'
       build-tool: 'maven'  # or 'gradle'
       gradle-version: '8.5'  # only needed for gradle
       maven-opts: '-Xmx4g'   # only needed for maven

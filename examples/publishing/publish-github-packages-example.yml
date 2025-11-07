@@ -30,7 +30,7 @@ jobs:
           build-tool: 'maven'  # or 'gradle'
           publish-target: 'github'
           artifact-version: ${{ github.event.release.tag_name || inputs.version }}
-          java-version: '21'
+          java-version: '25'
           skip-tests: false
           gpg-sign: false  # Not required for GitHub Packages
           dry-run: false

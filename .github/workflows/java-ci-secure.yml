@@ -180,7 +180,7 @@ jobs:
           fi
 
       - name: 📊 Generate test report
-        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        uses: dorny/test-reporter@dc3a92680fcc15842eef52e8c4606ea7ce6bd3f3 # v2.1.1
         if: always()
         with:
           name: Unit Tests Results (${{ matrix.os }}, Java ${{ matrix.java-version }})

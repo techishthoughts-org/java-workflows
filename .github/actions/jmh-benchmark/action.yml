@@ -226,48 +226,50 @@ runs:
         # Generate human-readable report
         REPORT_FILE="benchmark-results/report.md"
 
-        cat > "$REPORT_FILE" <<EOF
-# ⚡ JMH Benchmark Results
+        cat > "$REPORT_FILE" <<'EOF'
+        # ⚡ JMH Benchmark Results
 
-**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-**Java Version:** ${{ inputs.java-version }}
-**Build Tool:** ${{ inputs.build-tool }}
-**Pattern:** \`${{ inputs.benchmark-pattern }}\`
+        Date: **$(date -u +"%Y-%m-%d %H:%M:%S UTC")**
+        Java Version: **${{ inputs.java-version }}**
+        Build Tool: **${{ inputs.build-tool }}**
+        Pattern: **${{ inputs.benchmark-pattern }}**
 
-## Configuration
+        ## Configuration
 
-| Setting | Value |
-|---------|-------|
-| Warmup Iterations | ${{ inputs.warmup-iterations }} |
-| Measurement Iterations | ${{ inputs.measurement-iterations }} |
-| Forks | ${{ inputs.forks }} |
-| Threads | ${{ inputs.threads }} |
+        | Setting | Value |
+        |---------|-------|
+        | Warmup Iterations | ${{ inputs.warmup-iterations }} |
+        | Measurement Iterations | ${{ inputs.measurement-iterations }} |
+        | Forks | ${{ inputs.forks }} |
+        | Threads | ${{ inputs.threads }} |
 
-## Results
+        ## Results
 
-EOF
+        EOF
 
         # Add results summary
         if [[ "${{ inputs.output-format }}" == "json" && command -v jq &> /dev/null ]]; then
-          echo "### Benchmark Scores" >> "$REPORT_FILE"
-          echo "" >> "$REPORT_FILE"
-          echo "| Benchmark | Score | Unit |" >> "$REPORT_FILE"
-          echo "|-----------|-------|------|" >> "$REPORT_FILE"
-
-          jq -r '.[] | "| \(.benchmark) | \(.primaryMetric.score | tonumber | . * 100 | round / 100) | \(.primaryMetric.scoreUnit) |"' "$RESULTS_FILE" >> "$REPORT_FILE" 2>/dev/null || true
+          {
+            echo "### Benchmark Scores"
+            echo ""
+            echo "| Benchmark | Score | Unit |"
+            echo "|-----------|-------|------|"
+            jq -r '.[] | "| \(.benchmark) | \(.primaryMetric.score | tonumber | . * 100 | round / 100) | \(.primaryMetric.scoreUnit) |"' "$RESULTS_FILE" 2>/dev/null || true
+          } >> "$REPORT_FILE"
         fi
 
         # Add comparison if baseline exists
         if [[ -n "${{ inputs.baseline-file }}" && -f "${{ inputs.baseline-file }}" ]]; then
-          echo "" >> "$REPORT_FILE"
-          echo "## Comparison with Baseline" >> "$REPORT_FILE"
-          echo "" >> "$REPORT_FILE"
-
-          if [[ "${{ steps.analyze.outputs.regression-detected }}" == "true" ]]; then
-            echo "⚠️ **Performance Regression Detected**" >> "$REPORT_FILE"
-          else
-            echo "✅ **No Significant Regression**" >> "$REPORT_FILE"
-          fi
+          {
+            echo ""
+            echo "## Comparison with Baseline"
+            echo ""
+            if [[ "${{ steps.analyze.outputs.regression-detected }}" == "true" ]]; then
+              echo "⚠️ **Performance Regression Detected**"
+            else
+              echo "✅ **No Significant Regression**"
+            fi
+          } >> "$REPORT_FILE"
         fi
 
         echo "report-url=$REPORT_FILE" >> $GITHUB_OUTPUT

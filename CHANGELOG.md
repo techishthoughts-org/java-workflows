@@ -1,3 +1,27 @@
+# 🚀 Release v3.6.0
+
+**Release Date**: 2025-11-07
+
+## 🔧 Maintenance
+- chore(deps): bump actions/upload-artifact from 4 to 5 (#1) (7f5fbd9)
+- chore: use default dependencies label for dependabot (8bc726f)
+- chore: configure dependabot for maven, gradle, and actions (8e3baf1)
+
+## 📦 Workflow Files Changed
+
+- `.github/workflows/ci-security.yml`
+- `.github/workflows/container-scan.yml`
+- `.github/workflows/java-ci.yml`
+
+## 🔗 Links
+
+- **Full Changelog**: https://github.com/techishthoughts-org/java-workflows/compare/v3.5.0...v3.6.0
+- **Documentation**: https://github.com/techishthoughts-org/java-workflows/blob/v3.6.0/README.md
+
+---
+
+**🤖 This release was automatically created by GitHub Actions**
+
 # 🚀 Release v3.5.0
 
 **Release Date**: 2025-11-07

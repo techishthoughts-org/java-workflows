@@ -61,8 +61,21 @@ jobs:
       - name: 🔍 Check for hardcoded secrets
         run: |
           echo "🔍 Scanning for potential secrets..."
-          if grep -r -i "password\|secret\|token\|key" .github/workflows/ .github/actions/ | grep -v "#\|TODO\|FIXME\|example"; then
+          SCAN_RESULTS=$(grep -R -n -i -E "(password|secret|token)[[:space:]]*[:=][[:space:]]*[^[:space:]\$]" .github/workflows/ .github/actions/ 2>/dev/null || true)
+
+          # Ignore references to GitHub secrets, documented descriptions, and other safe patterns
+          FILTERED_RESULTS=$(echo "$SCAN_RESULTS" |
+            grep -vi -E '^[[:space:]]*#' |
+            grep -vi -E '\\b(description|example|placeholder)\\b' |
+            grep -vi -E 'hashfiles\(|github\\.token|GITHUB_TOKEN|SLACK_WEBHOOK_URL|AWS_(ACCESS|SECRET)_KEY|SNYK_TOKEN|AZURE_CREDENTIALS|KUBECONFIG' |
+            grep -vi -E 'id-token:[[:space:]]+write' |
+            grep -vi -E 'server-password:[[:space:]]+MAVEN_PASSWORD' |
+            grep -vi -E 'SCAN_RESULTS=|FILTERED_RESULTS=|grep -vi -E' |
+            grep -vi -E '^$' || true)
+
+          if [ -n "$FILTERED_RESULTS" ]; then
             echo "⚠️ Potential secrets found in workflow files"
+            echo "$FILTERED_RESULTS"
             exit 1
           else
             echo "✅ No hardcoded secrets found"

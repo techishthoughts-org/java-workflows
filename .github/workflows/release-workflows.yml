@@ -163,19 +163,21 @@ jobs:
 
           while IFS= read -r commit; do
             if [[ "$commit" =~ ^-\ (feat|feature) ]]; then
-              FEATURES="$FEATURES
-$commit"
+              FEATURES+=$'\n'$commit
             elif [[ "$commit" =~ ^-\ (fix|bugfix) ]]; then
-              FIXES="$FIXES
-$commit"
+              FIXES+=$'\n'$commit
             elif [[ "$commit" =~ ^-\ (BREAKING|breaking) ]]; then
-              BREAKING="$BREAKING
-$commit"
+              BREAKING+=$'\n'$commit
             else
-              CHORES="$CHORES
-$commit"
+              CHORES+=$'\n'$commit
             fi
           done <<< "$COMMITS"
+
+          # Trim leading newlines
+          FEATURES=${FEATURES#$'\n'}
+          FIXES=${FIXES#$'\n'}
+          CHORES=${CHORES#$'\n'}
+          BREAKING=${BREAKING#$'\n'}
 
           # Create changelog content
           cat > CHANGELOG_NEW.md << EOF

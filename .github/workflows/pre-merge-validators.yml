@@ -1,0 +1,70 @@
+name: 🔍 Pre-merge Validators
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-yaml:
+    name: ✅ Workflow YAML
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Install YAML tooling
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --quiet pyyaml
+
+      - name: 🔍 Validate workflows and actions
+        run: |
+          echo "🔍 Validating workflow YAML files..."
+          find .github/workflows -name '*.yml' -o -name '*.yaml' |
+            while read -r file; do
+              echo "Validating $file"
+              python3 -c "import yaml; yaml.safe_load(open('$file'))"
+            done
+
+          echo "🔍 Validating composite action YAML files..."
+          find .github/actions -maxdepth 2 -name 'action.yml' |
+            while read -r file; do
+              echo "Validating $file"
+              python3 -c "import yaml; yaml.safe_load(open('$file'))"
+            done
+
+  scan-secrets:
+    name: 🚫 Hardcoded Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔐 Scan for potential hardcoded secrets
+        run: |
+          echo "🔍 Scanning for potential secrets..."
+          SCAN_RESULTS=$(grep -R -n -i -E "(password|secret|token)[[:space:]]*[:=][[:space:]]*[^[:space:]\$]" .github/workflows/ .github/actions/ 2>/dev/null || true)
+
+          FILTERED_RESULTS=$(echo "$SCAN_RESULTS" |
+            grep -vi -E '^[[:space:]]*#' |
+            grep -vi -E '\\b(description|example|placeholder)\\b' |
+            grep -vi -E 'hashfiles\(|github\\.token|GITHUB_TOKEN|SLACK_WEBHOOK_URL|AWS_(ACCESS|SECRET)_KEY|SNYK_TOKEN|AZURE_CREDENTIALS|KUBECONFIG' |
+            grep -vi -E 'id-token:[[:space:]]+write' |
+            grep -vi -E 'server-password:[[:space:]]+MAVEN_PASSWORD' |
+            grep -vi -E 'SCAN_RESULTS=|FILTERED_RESULTS=|grep -vi -E' |
+            grep -vi -E '^$' || true)
+
+          if [ -n "$FILTERED_RESULTS" ]; then
+            echo "⚠️ Potential secrets found in workflow files"
+            echo "$FILTERED_RESULTS"
+            exit 1
+          else
+            echo "✅ No hardcoded secrets found"
+          fi
+
+

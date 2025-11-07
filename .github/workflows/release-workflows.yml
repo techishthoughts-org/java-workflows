@@ -379,6 +379,7 @@ jobs:
     name: ✅ Validate Release
     runs-on: ubuntu-latest
     needs: [create-release]
+    if: needs.create-release.outputs.tag-name != ''
     steps:
       - name: 📥 Checkout at tag
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -404,17 +405,20 @@ jobs:
           done
 
           # Check that VERSION file matches tag
+          TAG_VERSION="${{ needs.create-release.outputs.tag-name }}"
+          TAG_VERSION=${TAG_VERSION#v}
+
           if [ -f VERSION ]; then
             VERSION_CONTENT=$(cat VERSION)
-            TAG_VERSION="${{ needs.create-release.outputs.tag-name }}"
-            TAG_VERSION=${TAG_VERSION#v}  # Remove 'v' prefix
 
-            if [ "$VERSION_CONTENT" != "$TAG_VERSION" ]; then
+            if [ -z "$TAG_VERSION" ]; then
+              echo "⚠️ No tag name provided; skipping VERSION consistency check"
+            elif [ "$VERSION_CONTENT" != "$TAG_VERSION" ]; then
               echo "❌ VERSION file ($VERSION_CONTENT) doesn't match tag ($TAG_VERSION)"
               exit 1
+            else
+              echo "✅ VERSION file matches tag"
             fi
-
-            echo "✅ VERSION file matches tag"
           fi
 
           echo "✅ Release validation completed successfully"

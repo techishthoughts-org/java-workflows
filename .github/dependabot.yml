@@ -8,8 +8,7 @@ updates:
       time: "04:00"
     open-pull-requests-limit: 10
     labels:
-      - dependabot
-      - github-actions
+      - dependencies
 
   - package-ecosystem: "maven"
     directory: "/"
@@ -21,8 +20,7 @@ updates:
     allow:
       - dependency-type: "direct"
     labels:
-      - dependabot
-      - maven
+      - dependencies
 
   - package-ecosystem: "gradle"
     directory: "/"
@@ -34,5 +32,4 @@ updates:
     allow:
       - dependency-type: "direct"
     labels:
-      - dependabot
-      - gradle
+      - dependencies

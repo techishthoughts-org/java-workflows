@@ -142,7 +142,7 @@ jobs:
 
       - name: 🔐 Get AKS kubeconfig
         if: inputs.cluster-provider == 'aks'
-        uses: azure/aks-set-context@v3
+        uses: azure/aks-set-context@v4
         with:
           cluster-name: ${{ inputs.cluster-name }}
           resource-group: ${{ env.AZURE_RESOURCE_GROUP }}

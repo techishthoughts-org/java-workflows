@@ -1,3 +1,29 @@
+# 🚀 Release v3.8.0
+
+**Release Date**: 2025-11-07
+
+## 🔧 Maintenance
+- chore(deps): bump 8398a7/action-slack from 3.16.2 to 3.19.0 (#6) (dd593fa)
+- chore(deps): bump org.apache.maven.plugins:maven-surefire-plugin (#10) (97bf09d)
+- chore(deps): bump google-github-actions/auth from 2 to 3 (#3) (6b79ad7)
+
+## 📦 Workflow Files Changed
+
+- `.github/workflows/auto-delete-branch-enhanced.yml`
+- `.github/workflows/auto-tag-enhanced.yml`
+- `.github/workflows/dependabot-auto-merge-enhanced.yml`
+- `.github/workflows/java-ci-secure.yml`
+- `.github/workflows/k8s-deploy.yml`
+
+## 🔗 Links
+
+- **Full Changelog**: https://github.com/techishthoughts-org/java-workflows/compare/v3.7.0...v3.8.0
+- **Documentation**: https://github.com/techishthoughts-org/java-workflows/blob/v3.8.0/README.md
+
+---
+
+**🤖 This release was automatically created by GitHub Actions**
+
 # 🚀 Release v3.7.0
 
 **Release Date**: 2025-11-07

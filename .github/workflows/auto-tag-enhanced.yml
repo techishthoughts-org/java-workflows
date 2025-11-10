@@ -325,7 +325,7 @@ jobs:
       - name: 📦 Create GitHub Release
         id: create-release
         if: steps.check-tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@a74c6b72af54cfa997e81df42d94703d6313a2d0 # v2.0.6
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
         with:
           tag_name: ${{ steps.project-version.outputs.tag-name }}
           name: 🚀 Release ${{ steps.project-version.outputs.tag-name }}

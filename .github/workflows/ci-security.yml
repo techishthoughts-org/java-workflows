@@ -168,7 +168,7 @@ jobs:
       security-events: write
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🔍 Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -209,7 +209,7 @@ jobs:
       high-count: ${{ steps.scan.outputs.high }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: ☕ Set up JDK ${{ needs.validate-inputs.outputs.java-version }}
         uses: actions/setup-java@v5
@@ -286,7 +286,7 @@ jobs:
       high-count: ${{ steps.scan.outputs.high }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🔍 Run Trivy vulnerability scanner
         id: scan
@@ -341,7 +341,7 @@ jobs:
       high-count: ${{ steps.scan.outputs.high }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: ☕ Set up JDK ${{ needs.validate-inputs.outputs.java-version }}
         uses: actions/setup-java@v5

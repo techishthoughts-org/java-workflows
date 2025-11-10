@@ -85,7 +85,7 @@ jobs:
       status: ${{ steps.result.outputs.status }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🔑 Login to Container Registry
         if: secrets.REGISTRY_USERNAME != '' && secrets.REGISTRY_PASSWORD != ''

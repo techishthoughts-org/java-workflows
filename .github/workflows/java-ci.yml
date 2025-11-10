@@ -103,7 +103,7 @@ jobs:
       build-status: ${{ steps.build-status.outputs.status }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🔍 Auto-detect build tool
         id: detect

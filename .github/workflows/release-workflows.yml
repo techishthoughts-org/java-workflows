@@ -364,7 +364,7 @@ jobs:
 
       - name: 📦 Create GitHub Release
         id: create-release
-        uses: softprops/action-gh-release@a74c6b72af54cfa997e81df42d94703d6313a2d0 # v2.0.6
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
         with:
           tag_name: v${{ needs.detect-changes.outputs.next-version }}
           name: v${{ needs.detect-changes.outputs.next-version }}
